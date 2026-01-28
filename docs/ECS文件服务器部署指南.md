@@ -404,6 +404,10 @@ cat >> /etc/profile << 'EOF'
 export PATH=$PATH:/usr/local/go/bin
 export GOPATH=/root/go
 export PATH=$PATH:$GOPATH/bin
+
+# 配置国内 Go 代理（加速依赖下载）
+export GOPROXY=https://goproxy.cn,https://mirrors.aliyun.com/goproxy,direct
+export GO111MODULE=on
 EOF
 
 # 使环境变量生效
@@ -411,6 +415,9 @@ source /etc/profile
 
 # 验证安装
 go version
+
+# 验证代理配置
+go env GOPROXY
 ```
 
 **Ubuntu/Debian：**
@@ -608,6 +615,38 @@ chown -R root:root /var/www/audio
 # 设置权限
 chmod 755 /var/www/audio
 ```
+
+### 5. Go 依赖下载超时（国内环境）
+
+**问题表现：**
+```
+go: downloading github.com/gorilla/mux v1.8.1
+go: downloading gopkg.in/yaml.v3 v3.0.1
+main.go:13:2: github.com/gorilla/mux@v1.8.1: Get "https://proxy.golang.org/...": dial tcp: i/o timeout
+```
+
+**解决方案：**
+
+```bash
+# 临时配置 Go 代理
+export GOPROXY=https://goproxy.cn,https://mirrors.aliyun.com/goproxy,direct
+export GO111MODULE=on
+
+# 验证配置
+go env GOPROXY
+
+# 重新下载依赖
+go mod download
+
+# 永久配置（添加到 ~/.bashrc 或 /etc/profile）
+cat >> ~/.bashrc << 'EOF'
+export GOPROXY=https://goproxy.cn,direct
+export GO111MODULE=on
+EOF
+source ~/.bashrc
+```
+
+**注意：** 编译脚本 `scripts/build.sh` 和 `scripts/build-test.sh` 已自动配置 GOPROXY，无需手动配置。
 
 ## 生产环境建议
 

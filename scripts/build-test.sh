@@ -27,6 +27,19 @@ GO_VERSION=$(go version | awk '{print $3}')
 echo -e "${GREEN}✓ Go版本: $GO_VERSION${NC}"
 echo ""
 
+# 配置Go代理（中国大陆使用国内镜像）
+echo -e "${YELLOW}配置Go代理...${NC}"
+export GOPROXY=https://goproxy.cn,https://mirrors.aliyun.com/goproxy,direct
+export GO111MODULE=on
+echo -e "${GREEN}✓ GOPROXY: $GOPROXY${NC}"
+echo ""
+
+# 下载依赖
+echo -e "${YELLOW}下载依赖...${NC}"
+go mod download
+echo -e "${GREEN}✓ 依赖下载完成${NC}"
+echo ""
+
 # 清理旧的编译文件
 echo -e "${YELLOW}清理旧的编译文件...${NC}"
 rm -rf bin/
