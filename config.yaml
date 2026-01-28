@@ -1,0 +1,21 @@
+# 音频文件服务器配置文件
+
+server:
+  # 服务器监听端口
+  port: "8000"
+  # 读取超时时间（秒）
+  read_timeout: 300
+  # 写入超时时间（秒）
+  write_timeout: 300
+
+storage:
+  # 音频文件存储目录
+  audio_dir: "./audio_files"
+  # 最大上传文件大小（MB）
+  max_upload_mb: 100
+
+logging:
+  # 日志级别：DEBUG, INFO, WARN, ERROR
+  level: "INFO"
+  # 日志文件目录
+  log_dir: "./logs"
