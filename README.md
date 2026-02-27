@@ -1,12 +1,15 @@
-# Go 音频文件服务器
+# Go 文件服务器
 
-基于 Go 语言开发的轻量级音频文件上传服务，用于在阿里云 ECS 服务器上托管音频文件。
+基于 Go 语言开发的轻量级文件上传服务，用于在阿里云 ECS 服务器上托管音频/视频文件。
 
 ## 功能特性
 
-- ✅ **文件上传**: 支持最大 100MB 的音频文件上传
+- ✅ **文件上传**: 支持最大 100MB 的文件上传
+- ✅ **元数据支持**: 支持标题、作者、描述等元数据存储
 - ✅ **静态文件服务**: 提供已上传文件的 HTTP 访问
-- ✅ **文件检查**: 检查服务器上是否已存在指定文件（支持增量处理）
+- ✅ **文件检查**: 检查服务器上是否已存在指定文件
+- ✅ **文件删除**: 删除文件及其关联的元数据
+- ✅ **元数据查询**: 获取视频的元数据信息
 - ✅ **健康检查**: 服务状态监控接口
 - ✅ **双日志输出**: 控制台 + 文件日志
 - ✅ **配置文件**: YAML 格式配置管理
@@ -169,17 +172,20 @@ curl http://localhost:8000/
 {
   "service": "Audio File Server (Go)",
   "status": "running",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "upload_endpoint": "/upload",
   "audio_dir": "./audio_files"
 }
 ```
 
-### 2. 文件上传
+### 2. 文件上传（支持元数据）
 
 ```bash
 curl -X POST \
-  -F "file=@audio.wav" \
+  -F "file=@video.mp4" \
+  -F "title=视频标题" \
+  -F "author=作者名称" \
+  -F "description=视频描述" \
   http://localhost:8000/upload
 ```
 
@@ -188,9 +194,16 @@ curl -X POST \
 ```json
 {
   "success": true,
-  "filename": "audio.wav",
-  "url": "/audio/audio.wav",
-  "size": 12345
+  "filename": "video.mp4",
+  "url": "/audio/video.mp4",
+  "size": 12345,
+  "metadata": {
+    "filename": "video.mp4",
+    "title": "视频标题",
+    "author": "作者名称",
+    "description": "视频描述",
+    "upload_time": "2026-02-27T12:00:00+08:00"
+  }
 }
 ```
 
@@ -203,14 +216,14 @@ curl http://localhost:8000/audio/audio.wav --output downloaded.wav
 ### 4. 文件检查
 
 ```bash
-curl http://localhost:8000/api/check/7123456789012345678.mp4
+curl http://localhost:8000/api/check/video.mp4
 ```
 
 文件存在时响应:
 ```json
 {
   "exists": true,
-  "filename": "7123456789012345678.mp4",
+  "filename": "video.mp4",
   "size": 102400000,
   "upload_time": "2026-02-26T12:00:00Z"
 }
@@ -220,7 +233,41 @@ curl http://localhost:8000/api/check/7123456789012345678.mp4
 ```json
 {
   "exists": false,
-  "filename": "7123456789012345678.mp4"
+  "filename": "video.mp4"
+}
+```
+
+### 5. 获取视频元数据
+
+```bash
+curl http://localhost:8000/api/metadata/video.mp4
+```
+
+响应:
+```json
+{
+  "success": true,
+  "metadata": {
+    "filename": "video.mp4",
+    "title": "视频标题",
+    "author": "作者名称",
+    "description": "视频描述",
+    "upload_time": "2026-02-27T12:00:00+08:00"
+  }
+}
+```
+
+### 6. 删除视频及元数据
+
+```bash
+curl -X DELETE http://localhost:8000/api/file/video.mp4
+```
+
+响应:
+```json
+{
+  "success": true,
+  "message": "File deleted successfully"
 }
 ```
 
