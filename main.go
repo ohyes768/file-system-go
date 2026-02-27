@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -54,9 +55,16 @@ type HealthResponse struct {
 	AudioDir       string `json:"audio_dir"`
 }
 
+type CheckFileResponse struct {
+	Exists     bool   `json:"exists"`
+	Filename   string `json:"filename"`
+	Size       int64  `json:"size,omitempty"`
+	UploadTime string `json:"upload_time,omitempty"`
+}
+
 var (
-	config   Config
-	fileLogger *log.Logger
+	config      Config
+	fileLogger  *log.Logger
 	consoleLogger = log.New(os.Stdout, "", log.LstdFlags)
 )
 
@@ -117,7 +125,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	response := HealthResponse{
 		Service:        "Audio File Server (Go)",
 		Status:         "running",
-		Version:        "1.0.0",
+		Version:        "1.1.0",
 		UploadEndpoint: "/upload",
 		AudioDir:       config.Storage.AudioDir,
 	}
@@ -195,6 +203,56 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// 文件检查接口
+func checkFileHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// 获取文件名
+	vars := mux.Vars(r)
+	filename := vars["filename"]
+
+	// 安全检查：防止路径遍历
+	if strings.Contains(filename, "..") {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid filename",
+		})
+		return
+	}
+
+	// 构建文件路径
+	filePath := filepath.Join(config.Storage.AudioDir, filename)
+
+	// 检查文件是否存在
+	info, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
+		// 文件不存在
+		json.NewEncoder(w).Encode(CheckFileResponse{
+			Exists:   false,
+			Filename: filename,
+		})
+		return
+	}
+
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "File check failed",
+		})
+		return
+	}
+
+	// 文件存在，返回文件信息
+	json.NewEncoder(w).Encode(CheckFileResponse{
+		Exists:     true,
+		Filename:   filename,
+		Size:       info.Size(),
+		UploadTime: info.ModTime().Format(time.RFC3339),
+	})
+}
+
 // 日志中间件
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -240,6 +298,7 @@ func main() {
 	// 注册路由
 	r.HandleFunc("/", healthHandler).Methods("GET")
 	r.HandleFunc("/upload", uploadHandler).Methods("POST")
+	r.HandleFunc("/api/check/{filename}", checkFileHandler).Methods("GET")
 
 	// 静态文件服务
 	r.PathPrefix("/audio/").Handler(http.StripPrefix("/audio/", http.FileServer(http.Dir(config.Storage.AudioDir))))
@@ -254,6 +313,7 @@ func main() {
 	fileLogger.Printf("🌐 监听地址: 0.0.0.0:%s", config.Server.Port)
 	fileLogger.Printf("✅ 健康检查: http://localhost:%s/", config.Server.Port)
 	fileLogger.Printf("📤 上传接口: http://localhost:%s/upload", config.Server.Port)
+	fileLogger.Printf("🔍 文件检查: http://localhost:%s/api/check/{filename}", config.Server.Port)
 
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		fileLogger.Fatalf("服务器启动失败: %v", err)

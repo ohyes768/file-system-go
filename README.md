@@ -6,6 +6,7 @@
 
 - ✅ **文件上传**: 支持最大 100MB 的音频文件上传
 - ✅ **静态文件服务**: 提供已上传文件的 HTTP 访问
+- ✅ **文件检查**: 检查服务器上是否已存在指定文件（支持增量处理）
 - ✅ **健康检查**: 服务状态监控接口
 - ✅ **双日志输出**: 控制台 + 文件日志
 - ✅ **配置文件**: YAML 格式配置管理
@@ -168,7 +169,7 @@ curl http://localhost:8000/
 {
   "service": "Audio File Server (Go)",
   "status": "running",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "upload_endpoint": "/upload",
   "audio_dir": "./audio_files"
 }
@@ -197,6 +198,30 @@ curl -X POST \
 
 ```bash
 curl http://localhost:8000/audio/audio.wav --output downloaded.wav
+```
+
+### 4. 文件检查
+
+```bash
+curl http://localhost:8000/api/check/7123456789012345678.mp4
+```
+
+文件存在时响应:
+```json
+{
+  "exists": true,
+  "filename": "7123456789012345678.mp4",
+  "size": 102400000,
+  "upload_time": "2026-02-26T12:00:00Z"
+}
+```
+
+文件不存在时响应:
+```json
+{
+  "exists": false,
+  "filename": "7123456789012345678.mp4"
+}
 ```
 
 ## 日志
