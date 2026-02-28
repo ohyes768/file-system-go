@@ -214,7 +214,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	response := HealthResponse{
 		Service:        "Audio File Server (Go)",
 		Status:         "running",
-		Version:        "1.2.0",
+		Version:        "1.3.0",
 		UploadEndpoint: "/upload",
 		AudioDir:       config.Storage.AudioDir,
 	}
