@@ -10,6 +10,8 @@
 - ✅ **文件检查**: 检查服务器上是否已存在指定文件
 - ✅ **文件删除**: 删除文件及其关联的元数据
 - ✅ **元数据查询**: 获取视频的元数据信息
+- ✅ **视频列表查询**: 支持前缀和后缀过滤的视频列表查询
+- ✅ **视频下载**: 根据视频 ID 下载视频文件
 - ✅ **健康检查**: 服务状态监控接口
 - ✅ **双日志输出**: 控制台 + 文件日志
 - ✅ **配置文件**: YAML 格式配置管理
@@ -172,7 +174,7 @@ curl http://localhost:8000/
 {
   "service": "Audio File Server (Go)",
   "status": "running",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "upload_endpoint": "/upload",
   "audio_dir": "./audio_files"
 }
@@ -270,6 +272,43 @@ curl -X DELETE http://localhost:8000/api/file/video.mp4
   "message": "File deleted successfully"
 }
 ```
+
+### 7. 查询视频列表
+
+```bash
+# 查询所有视频
+curl -X POST http://localhost:8000/api/videos/query
+
+# 查询所有 .mp4 文件
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"filters":{"suffix": ".mp4"}}' \
+  http://localhost:8000/api/videos/query
+```
+
+响应:
+```json
+{
+  "success": true,
+  "videos": [
+    {
+      "id": "video1",
+      "filename": "video1.mp4",
+      "size": 102400000,
+      "url": "/audio/video1.mp4"
+    }
+  ]
+}
+```
+
+### 8. 下载视频
+
+```bash
+# 下载视频
+curl -O http://localhost:8000/api/videos/video1/download
+```
+
+预期响应：文件下载到当前目录
 
 ## 日志
 

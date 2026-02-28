@@ -86,6 +86,31 @@ type DeleteFileResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
+// 视频文件信息
+type VideoFile struct {
+	ID       string `json:"id"`
+	Filename string `json:"filename"`
+	Size     int64  `json:"size"`
+	URL      string `json:"url,omitempty"`
+}
+
+// 查询请求
+type QueryRequest struct {
+	Filters *QueryFilters `json:"filters,omitempty"`
+}
+
+type QueryFilters struct {
+	Prefix string `json:"prefix,omitempty"`
+	Suffix string `json:"suffix,omitempty"`
+}
+
+// 查询响应
+type QueryResponse struct {
+	Success bool        `json:"success"`
+	Videos  []VideoFile `json:"videos,omitempty"`
+	Error   string      `json:"error,omitempty"`
+}
+
 var (
 	config      Config
 	fileLogger  *log.Logger
@@ -443,6 +468,164 @@ func deleteFileHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// 查询视频列表接口
+func queryVideosHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// 解析请求体
+	var req QueryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(QueryResponse{
+			Success: false,
+			Error:   "Invalid request body",
+		})
+		return
+	}
+
+	fileLogger.Printf("查询视频列表: %+v", req)
+
+	// 读取音频目录
+	entries, err := os.ReadDir(config.Storage.AudioDir)
+	if err != nil {
+		fileLogger.Printf("读取目录失败: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(QueryResponse{
+			Success: false,
+			Error:   "Failed to read directory",
+		})
+		return
+	}
+
+	var videos []VideoFile
+	prefix := ""
+	suffix := ""
+
+	// 获取过滤条件
+	if req.Filters != nil {
+		prefix = req.Filters.Prefix
+		suffix = req.Filters.Suffix
+	}
+
+	// 遍历目录，收集视频文件
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		filename := entry.Name()
+
+		// 跳过元数据文件
+		if strings.HasSuffix(filename, ".meta.json") {
+			continue
+		}
+
+		// 应用过滤条件
+		if prefix != "" && !strings.HasPrefix(filename, prefix) {
+			continue
+		}
+		if suffix != "" && !strings.HasSuffix(filename, suffix) {
+			continue
+		}
+
+		// 获取文件信息
+		info, err := entry.Info()
+		if err != nil {
+			fileLogger.Printf("获取文件信息失败: %s - %v", filename, err)
+			continue
+		}
+
+		// 从文件名提取 ID（去掉扩展名）
+		id := filename
+		if ext := filepath.Ext(filename); ext != "" {
+			id = filename[:len(filename)-len(ext)]
+		}
+
+		// 构建访问 URL
+		url := fmt.Sprintf("/audio/%s", filename)
+
+		videos = append(videos, VideoFile{
+			ID:       id,
+			Filename: filename,
+			Size:     info.Size(),
+			URL:      url,
+		})
+	}
+
+	fileLogger.Printf("查询到 %d 个视频文件", len(videos))
+
+	json.NewEncoder(w).Encode(QueryResponse{
+		Success: true,
+		Videos:  videos,
+	})
+}
+
+// 下载视频接口
+func downloadVideoHandler(w http.ResponseWriter, r *http.Request) {
+	// 获取视频 ID
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	fileLogger.Printf("下载视频: %s", id)
+
+	// 安全检查：防止路径遍历
+	if strings.Contains(id, "..") || strings.Contains(id, "/") || strings.Contains(id, "\\") {
+		http.Error(w, "Invalid video ID", http.StatusBadRequest)
+		return
+	}
+
+	// 尝试多种可能的文件扩展名
+	extensions := []string{".mp4", ".MP4", ".wav", ".WAV"}
+	var filePath string
+	var found bool
+
+	for _, ext := range extensions {
+		testPath := filepath.Join(config.Storage.AudioDir, id+ext)
+		if _, err := os.Stat(testPath); err == nil {
+			filePath = testPath
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		fileLogger.Printf("视频文件不存在: %s", id)
+		http.Error(w, "Video not found", http.StatusNotFound)
+		return
+	}
+
+	// 打开文件
+	file, err := os.Open(filePath)
+	if err != nil {
+		fileLogger.Printf("打开文件失败: %v", err)
+		http.Error(w, "Failed to open file", http.StatusInternalServerError)
+		return
+	}
+	defer file.Close()
+
+	// 获取文件信息
+	info, err := file.Stat()
+	if err != nil {
+		fileLogger.Printf("获取文件信息失败: %v", err)
+		http.Error(w, "Failed to get file info", http.StatusInternalServerError)
+		return
+	}
+
+	// 设置响应头
+	contentType := "video/mp4"
+	if strings.HasSuffix(filePath, ".wav") || strings.HasSuffix(filePath, ".WAV") {
+		contentType = "audio/wav"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filepath.Base(filePath)))
+
+	// 复制文件到响应
+	http.ServeContent(w, r, filepath.Base(filePath), info.ModTime(), file)
+
+	fileLogger.Printf("视频下载成功: %s (%d bytes)", id, info.Size())
+}
+
 // 日志中间件
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -491,6 +674,8 @@ func main() {
 	r.HandleFunc("/api/check/{filename}", checkFileHandler).Methods("GET")
 	r.HandleFunc("/api/metadata/{filename}", getMetadataHandler).Methods("GET")
 	r.HandleFunc("/api/file/{filename}", deleteFileHandler).Methods("DELETE")
+	r.HandleFunc("/api/videos/query", queryVideosHandler).Methods("POST")
+	r.HandleFunc("/api/videos/{id}/download", downloadVideoHandler).Methods("GET")
 
 	// 静态文件服务
 	r.PathPrefix("/audio/").Handler(http.StripPrefix("/audio/", http.FileServer(http.Dir(config.Storage.AudioDir))))
