@@ -674,6 +674,7 @@ func main() {
 	r.HandleFunc("/api/check/{filename}", checkFileHandler).Methods("GET")
 	r.HandleFunc("/api/metadata/{filename}", getMetadataHandler).Methods("GET")
 	r.HandleFunc("/api/file/{filename}", deleteFileHandler).Methods("DELETE")
+	r.HandleFunc("/api/videos/{filename}", deleteFileHandler).Methods("DELETE")
 	r.HandleFunc("/api/videos/query", queryVideosHandler).Methods("POST")
 	r.HandleFunc("/api/videos/{id}/download", downloadVideoHandler).Methods("GET")
 
