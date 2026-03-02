@@ -112,9 +112,10 @@ type QueryResponse struct {
 }
 
 var (
-	config      Config
-	fileLogger  *log.Logger
-	consoleLogger = log.New(os.Stdout, "", log.LstdFlags)
+	config               Config
+	fileLogger           *log.Logger
+	consoleLogger         = log.New(os.Stdout, "", log.LstdFlags)
+	deletedFilesManager   *DeletedFilesManager
 )
 
 // 加载配置文件
@@ -462,6 +463,10 @@ func deleteFileHandler(w http.ResponseWriter, r *http.Request) {
 
 	fileLogger.Printf("文件已删除: %s", filename)
 
+	// 添加到已删除文件记录
+	deletedFilesManager.Add(filename)
+	fileLogger.Printf("已添加到删除记录: %s", filename)
+
 	json.NewEncoder(w).Encode(DeleteFileResponse{
 		Success: true,
 		Message: "File deleted successfully",
@@ -665,6 +670,10 @@ func main() {
 		fileLogger.Fatalf("无法创建音频目录: %v", err)
 	}
 
+	// 初始化已删除文件管理器
+	deletedFilesManager = NewDeletedFilesManager(config.Storage.AudioDir)
+	fileLogger.Printf("已删除文件管理器已初始化")
+
 	// 创建路由
 	r := mux.NewRouter()
 
@@ -677,6 +686,11 @@ func main() {
 	r.HandleFunc("/api/videos/{filename}", deleteFileHandler).Methods("DELETE")
 	r.HandleFunc("/api/videos/query", queryVideosHandler).Methods("POST")
 	r.HandleFunc("/api/videos/{id}/download", downloadVideoHandler).Methods("GET")
+
+	// 已删除文件管理接口
+	r.HandleFunc("/api/deleted/files", getDeletedFilesHandler).Methods("GET")
+	r.HandleFunc("/api/deleted/check", checkDeletedFilesHandler).Methods("POST")
+	r.HandleFunc("/api/deleted/cleanup", cleanupDeletedRecordsHandler).Methods("POST")
 
 	// 静态文件服务
 	r.PathPrefix("/audio/").Handler(http.StripPrefix("/audio/", http.FileServer(http.Dir(config.Storage.AudioDir))))
