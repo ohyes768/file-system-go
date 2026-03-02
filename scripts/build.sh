@@ -54,7 +54,7 @@ export GOARCH=amd64
 export CGO_ENABLED=0
 
 # 带优化的编译（减小可执行文件体积）
-go build -ldflags="-s -w" -o bin/audio-server main.go
+go build -ldflags="-s -w" -o bin/audio-server .
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓ Linux AMD64版本编译成功${NC}"

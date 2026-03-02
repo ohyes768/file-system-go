@@ -1,0 +1,37 @@
+# 编译产物
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+*.test
+*.out
+
+# Go 工具缓存
+go.sum
+
+# 运行时生成的文件
+audio_files/
+deleted_files.json
+logs/
+*.log
+
+# 配置文件（保留示例配置，忽略实际配置）
+config.yaml
+!config.yaml.example
+
+# IDE 和编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.temp
