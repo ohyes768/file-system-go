@@ -24,6 +24,18 @@ type ReadFilesListResponse struct {
 	Error   string           `json:"error,omitempty"`
 }
 
+// RemoveReadRecordRequest 删除已读记录请求
+type RemoveReadRecordRequest struct {
+	Filename string `json:"filename"`
+}
+
+// RemoveReadRecordResponse 删除已读记录响应
+type RemoveReadRecordResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
 // markReadHandler 标记文件为已读
 func markReadHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -97,4 +109,53 @@ func getReadFilesHandler(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Records: records,
 	})
+}
+
+// removeReadRecordHandler 删除已读记录
+func removeReadRecordHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodDelete {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(RemoveReadRecordResponse{
+			Success: false,
+			Error:   "Method not allowed",
+		})
+		return
+	}
+
+	var req RemoveReadRecordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(RemoveReadRecordResponse{
+			Success: false,
+			Error:   "Invalid request body",
+		})
+		return
+	}
+
+	if req.Filename == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(RemoveReadRecordResponse{
+			Success: false,
+			Error:   "Filename is required",
+		})
+		return
+	}
+
+	removed := readFilesManager.Remove(req.Filename)
+
+	if removed {
+		fileLogger.Printf("已移除已读记录: %s", req.Filename)
+		json.NewEncoder(w).Encode(RemoveReadRecordResponse{
+			Success: true,
+			Message: "记录已移除",
+		})
+	} else {
+		fileLogger.Printf("未找到已读记录: %s", req.Filename)
+		json.NewEncoder(w).Encode(RemoveReadRecordResponse{
+			Success: false,
+			Error:   "Record not found",
+		})
+	}
 }

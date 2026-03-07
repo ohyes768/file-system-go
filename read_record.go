@@ -131,3 +131,22 @@ func (m *ReadFilesManager) GetByFilename(filename string) (*ReadFileRecord, bool
 	}
 	return &record, true
 }
+
+// Remove 删除已读记录
+// 返回 true 表示找到并删除，false 表示未找到
+func (m *ReadFilesManager) Remove(filename string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	_, exists := m.records[filename]
+	if !exists {
+		return false
+	}
+
+	delete(m.records, filename)
+
+	// 异步保存
+	go m.save()
+
+	return true
+}

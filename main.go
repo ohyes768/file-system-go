@@ -709,6 +709,7 @@ func main() {
 	// 已读文件管理接口
 	r.HandleFunc("/api/read/mark", markReadHandler).Methods("POST")
 	r.HandleFunc("/api/read/files", getReadFilesHandler).Methods("GET")
+	r.HandleFunc("/api/read/remove", removeReadRecordHandler).Methods("DELETE")
 
 	// 取消收藏文件管理接口
 	r.HandleFunc("/api/uncollected/files", getUncollectedFilesHandler).Methods("GET")
