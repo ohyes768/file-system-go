@@ -116,6 +116,8 @@ var (
 	fileLogger           *log.Logger
 	consoleLogger         = log.New(os.Stdout, "", log.LstdFlags)
 	deletedFilesManager   *DeletedFilesManager
+	readFilesManager      *ReadFilesManager
+	uncollectedFilesManager *UncollectedFilesManager
 )
 
 // 加载配置文件
@@ -215,7 +217,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	response := HealthResponse{
 		Service:        "Audio File Server (Go)",
 		Status:         "running",
-		Version:        "1.3.0",
+		Version:        "1.5.0",
 		UploadEndpoint: "/upload",
 		AudioDir:       config.Storage.AudioDir,
 	}
@@ -467,6 +469,10 @@ func deleteFileHandler(w http.ResponseWriter, r *http.Request) {
 	deletedFilesManager.Add(filename)
 	fileLogger.Printf("已添加到删除记录: %s", filename)
 
+	// 添加到取消收藏文件记录
+	uncollectedFilesManager.Add(filename)
+	fileLogger.Printf("已添加到取消收藏记录: %s", filename)
+
 	json.NewEncoder(w).Encode(DeleteFileResponse{
 		Success: true,
 		Message: "File deleted successfully",
@@ -674,6 +680,14 @@ func main() {
 	deletedFilesManager = NewDeletedFilesManager(config.Storage.AudioDir)
 	fileLogger.Printf("已删除文件管理器已初始化")
 
+	// 初始化已读文件管理器
+	readFilesManager = NewReadFilesManager(config.Storage.AudioDir)
+	fileLogger.Printf("已读文件管理器已初始化")
+
+	// 初始化取消收藏文件管理器
+	uncollectedFilesManager = NewUncollectedFilesManager(config.Storage.AudioDir)
+	fileLogger.Printf("取消收藏文件管理器已初始化")
+
 	// 创建路由
 	r := mux.NewRouter()
 
@@ -691,6 +705,14 @@ func main() {
 	r.HandleFunc("/api/deleted/files", getDeletedFilesHandler).Methods("GET")
 	r.HandleFunc("/api/deleted/check", checkDeletedFilesHandler).Methods("POST")
 	r.HandleFunc("/api/deleted/cleanup", cleanupDeletedRecordsHandler).Methods("POST")
+
+	// 已读文件管理接口
+	r.HandleFunc("/api/read/mark", markReadHandler).Methods("POST")
+	r.HandleFunc("/api/read/files", getReadFilesHandler).Methods("GET")
+
+	// 取消收藏文件管理接口
+	r.HandleFunc("/api/uncollected/files", getUncollectedFilesHandler).Methods("GET")
+	r.HandleFunc("/api/uncollected/remove", removeUncollectedRecordHandler).Methods("DELETE")
 
 	// 静态文件服务
 	r.PathPrefix("/audio/").Handler(http.StripPrefix("/audio/", http.FileServer(http.Dir(config.Storage.AudioDir))))
