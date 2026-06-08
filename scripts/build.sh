@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# 音频文件服务器编译脚本（Linux版本）
+# 文件服务器编译脚本（Linux版本）
 # 用于交叉编译Linux AMD64版本，部署到阿里云ECS
 
 set -e  # 遇到错误立即退出
 
 echo "======================================"
-echo "  音频文件服务器编译脚本 (Linux)"
+echo "  文件服务器编译脚本 (Linux)"
 echo "======================================"
 echo ""
 
@@ -88,4 +88,5 @@ echo "1. 上传到服务器: scp bin/audio-server root@your-ecs-ip:/root/"
 echo "2. 登录服务器: ssh root@your-ecs-ip"
 echo "3. 设置权限: chmod +x /root/audio-server"
 echo "4. 配置systemd服务（参考部署指南）"
+echo "5. 健康检查: curl http://your-ecs-ip:8000/health"
 echo ""

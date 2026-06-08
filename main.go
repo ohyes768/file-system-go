@@ -40,43 +40,18 @@ type Response struct {
 }
 
 type UploadResponse struct {
-	Success  bool           `json:"success"`
-	Filename string         `json:"filename,omitempty"`
-	URL      string         `json:"url,omitempty"`
-	Size     int64          `json:"size,omitempty"`
-	Metadata *VideoMetadata `json:"metadata,omitempty"`
-	Error    string         `json:"error,omitempty"`
+	Success  bool   `json:"success"`
+	Filename string `json:"filename,omitempty"`
+	URL      string `json:"url,omitempty"`
+	Size     int64  `json:"size,omitempty"`
+	Error    string `json:"error,omitempty"`
 }
 
 type HealthResponse struct {
-	Service        string `json:"service"`
-	Status         string `json:"status"`
-	Version        string `json:"version"`
-	UploadEndpoint string `json:"upload_endpoint"`
-	AudioDir       string `json:"audio_dir"`
-}
-
-type CheckFileResponse struct {
-	Exists     bool   `json:"exists"`
-	Filename   string `json:"filename"`
-	Size       int64  `json:"size,omitempty"`
-	UploadTime string `json:"upload_time,omitempty"`
-}
-
-// 视频元数据
-type VideoMetadata struct {
-	Filename    string    `json:"filename"`
-	Title       string    `json:"title"`
-	Author      string    `json:"author"`
-	Description string    `json:"description"`
-	UploadTime  time.Time `json:"upload_time"`
-}
-
-// 元数据响应
-type MetadataResponse struct {
-	Success  bool           `json:"success"`
-	Metadata *VideoMetadata `json:"metadata,omitempty"`
-	Error    string         `json:"error,omitempty"`
+	Service  string `json:"service"`
+	Status   string `json:"status"`
+	Version  string `json:"version"`
+	AudioDir string `json:"audio_dir"`
 }
 
 // 删除文件响应
@@ -112,12 +87,9 @@ type QueryResponse struct {
 }
 
 var (
-	config               Config
-	fileLogger           *log.Logger
-	consoleLogger         = log.New(os.Stdout, "", log.LstdFlags)
-	deletedFilesManager   *DeletedFilesManager
-	readFilesManager      *ReadFilesManager
-	uncollectedFilesManager *UncollectedFilesManager
+	config        Config
+	fileLogger    *log.Logger
+	consoleLogger = log.New(os.Stdout, "", log.LstdFlags)
 )
 
 // 加载配置文件
@@ -171,55 +143,14 @@ func initLogger() error {
 	return nil
 }
 
-// 保存元数据文件
-func saveMetadata(metadata VideoMetadata) error {
-	// 构建元数据文件路径：filename.mp4.meta.json
-	metaFilePath := filepath.Join(config.Storage.AudioDir, metadata.Filename+".meta.json")
-
-	// 序列化为 JSON（带缩进，便于阅读）
-	data, err := json.MarshalIndent(metadata, "", "  ")
-	if err != nil {
-		return fmt.Errorf("元数据序列化失败: %v", err)
-	}
-
-	// 写入文件
-	if err := os.WriteFile(metaFilePath, data, 0644); err != nil {
-		return fmt.Errorf("元数据文件写入失败: %v", err)
-	}
-
-	fileLogger.Printf("元数据已保存: %s", metaFilePath)
-	return nil
-}
-
-// 加载元数据文件
-func loadMetadata(filename string) (*VideoMetadata, error) {
-	// 构建元数据文件路径
-	metaFilePath := filepath.Join(config.Storage.AudioDir, filename+".meta.json")
-
-	// 读取文件
-	data, err := os.ReadFile(metaFilePath)
-	if err != nil {
-		return nil, err
-	}
-
-	// 反序列化
-	var metadata VideoMetadata
-	if err := json.Unmarshal(data, &metadata); err != nil {
-		return nil, fmt.Errorf("元数据解析失败: %v", err)
-	}
-
-	return &metadata, nil
-}
-
 // 健康检查接口
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := HealthResponse{
-		Service:        "Audio File Server (Go)",
-		Status:         "running",
-		Version:        "1.5.0",
-		UploadEndpoint: "/upload",
-		AudioDir:       config.Storage.AudioDir,
+		Service:  "File Server (Go)",
+		Status:   "running",
+		Version:  "2.0.0",
+		AudioDir: config.Storage.AudioDir,
 	}
 	json.NewEncoder(w).Encode(response)
 }
@@ -286,28 +217,8 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	fileLogger.Printf("文件上传成功: %s (%d bytes) 来自 %s", filename, size, r.RemoteAddr)
 
-	// 获取元数据参数
-	title := r.FormValue("title")
-	author := r.FormValue("author")
-	description := r.FormValue("description")
-
-	// 创建元数据
-	metadata := VideoMetadata{
-		Filename:    filename,
-		Title:       title,
-		Author:      author,
-		Description: description,
-		UploadTime:  time.Now(),
-	}
-
-	// 保存元数据文件
-	if err := saveMetadata(metadata); err != nil {
-		fileLogger.Printf("警告: 元数据保存失败: %v", err)
-		// 元数据保存失败不影响文件上传成功
-	}
-
 	// 构建访问 URL
-	fileURL := fmt.Sprintf("/audio/%s", filename)
+	fileURL := fmt.Sprintf("/api/files/%s/download", filename)
 
 	// 返回成功响应
 	w.WriteHeader(http.StatusOK)
@@ -316,125 +227,29 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		Filename: filename,
 		URL:      fileURL,
 		Size:     size,
-		Metadata: &metadata,
 	})
 }
 
-// 文件检查接口
-func checkFileHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	// 获取文件名
-	vars := mux.Vars(r)
-	filename := vars["filename"]
-
-	// 安全检查：防止路径遍历
-	if strings.Contains(filename, "..") {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "Invalid filename",
-		})
-		return
-	}
-
-	// 构建文件路径
-	filePath := filepath.Join(config.Storage.AudioDir, filename)
-
-	// 检查文件是否存在
-	info, err := os.Stat(filePath)
-	if os.IsNotExist(err) {
-		// 文件不存在
-		json.NewEncoder(w).Encode(CheckFileResponse{
-			Exists:   false,
-			Filename: filename,
-		})
-		return
-	}
-
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "File check failed",
-		})
-		return
-	}
-
-	// 文件存在，返回文件信息
-	json.NewEncoder(w).Encode(CheckFileResponse{
-		Exists:     true,
-		Filename:   filename,
-		Size:       info.Size(),
-		UploadTime: info.ModTime().Format(time.RFC3339),
-	})
-}
-
-// 获取视频元数据接口
-func getMetadataHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	// 获取文件名
-	vars := mux.Vars(r)
-	filename := vars["filename"]
-
-	// 安全检查：防止路径遍历
-	if strings.Contains(filename, "..") {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(MetadataResponse{
-			Success: false,
-			Error:   "Invalid filename",
-		})
-		return
-	}
-
-	// 加载元数据
-	metadata, err := loadMetadata(filename)
-	if err != nil {
-		if os.IsNotExist(err) {
-			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(MetadataResponse{
-				Success: false,
-				Error:   "Metadata not found",
-			})
-		} else {
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(MetadataResponse{
-				Success: false,
-				Error:   "Failed to load metadata",
-			})
-		}
-		return
-	}
-
-	// 返回元数据
-	json.NewEncoder(w).Encode(MetadataResponse{
-		Success:  true,
-		Metadata: metadata,
-	})
-}
-
-// 删除文件及元数据接口
+// 删除文件接口
 func deleteFileHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// 获取文件名
+	// 获取文件 ID（即客户端上传时的文件名）
 	vars := mux.Vars(r)
-	filename := vars["filename"]
+	id := vars["id"]
 
 	// 安全检查：防止路径遍历
-	if strings.Contains(filename, "..") {
+	if strings.Contains(id, "..") || strings.Contains(id, "/") || strings.Contains(id, "\\") {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(DeleteFileResponse{
 			Success: false,
-			Error:   "Invalid filename",
+			Error:   "Invalid file id",
 		})
 		return
 	}
 
 	// 构建文件路径
-	filePath := filepath.Join(config.Storage.AudioDir, filename)
-	metaFilePath := filepath.Join(config.Storage.AudioDir, filename+".meta.json")
+	filePath := filepath.Join(config.Storage.AudioDir, id)
 
 	// 检查文件是否存在
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
@@ -446,7 +261,7 @@ func deleteFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 删除文件
+	// 直接 hard delete
 	if err := os.Remove(filePath); err != nil {
 		fileLogger.Printf("删除文件失败: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -457,21 +272,7 @@ func deleteFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 删除元数据文件（如果存在）
-	if err := os.Remove(metaFilePath); err != nil && !os.IsNotExist(err) {
-		fileLogger.Printf("警告: 删除元数据文件失败: %v", err)
-		// 元数据删除失败不影响整体操作
-	}
-
-	fileLogger.Printf("文件已删除: %s", filename)
-
-	// 添加到已删除文件记录
-	deletedFilesManager.Add(filename)
-	fileLogger.Printf("已添加到删除记录: %s", filename)
-
-	// 添加到取消收藏文件记录
-	uncollectedFilesManager.Add(filename)
-	fileLogger.Printf("已添加到取消收藏记录: %s", filename)
+	fileLogger.Printf("文件已删除: %s", id)
 
 	json.NewEncoder(w).Encode(DeleteFileResponse{
 		Success: true,
@@ -526,11 +327,6 @@ func queryVideosHandler(w http.ResponseWriter, r *http.Request) {
 
 		filename := entry.Name()
 
-		// 跳过元数据文件
-		if strings.HasSuffix(filename, ".meta.json") {
-			continue
-		}
-
 		// 应用过滤条件
 		if prefix != "" && !strings.HasPrefix(filename, prefix) {
 			continue
@@ -571,37 +367,33 @@ func queryVideosHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// 下载视频接口
+// 下载文件接口
 func downloadVideoHandler(w http.ResponseWriter, r *http.Request) {
-	// 获取视频 ID
+	// 获取文件 ID（即上传时的客户端文件名）
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	fileLogger.Printf("下载视频: %s", id)
+	fileLogger.Printf("下载文件: %s", id)
 
 	// 安全检查：防止路径遍历
 	if strings.Contains(id, "..") || strings.Contains(id, "/") || strings.Contains(id, "\\") {
-		http.Error(w, "Invalid video ID", http.StatusBadRequest)
+		http.Error(w, "Invalid file id", http.StatusBadRequest)
 		return
 	}
 
-	// 尝试多种可能的文件扩展名
-	extensions := []string{".mp4", ".MP4", ".wav", ".WAV"}
-	var filePath string
-	var found bool
+	// ID = 完整文件名（含扩展名），直接定位
+	filePath := filepath.Join(config.Storage.AudioDir, id)
 
-	for _, ext := range extensions {
-		testPath := filepath.Join(config.Storage.AudioDir, id+ext)
-		if _, err := os.Stat(testPath); err == nil {
-			filePath = testPath
-			found = true
-			break
-		}
+	// 检查文件是否存在
+	info, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
+		fileLogger.Printf("文件不存在: %s", id)
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
 	}
-
-	if !found {
-		fileLogger.Printf("视频文件不存在: %s", id)
-		http.Error(w, "Video not found", http.StatusNotFound)
+	if err != nil {
+		fileLogger.Printf("获取文件信息失败: %v", err)
+		http.Error(w, "Failed to get file info", http.StatusInternalServerError)
 		return
 	}
 
@@ -614,18 +406,17 @@ func downloadVideoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// 获取文件信息
-	info, err := file.Stat()
-	if err != nil {
-		fileLogger.Printf("获取文件信息失败: %v", err)
-		http.Error(w, "Failed to get file info", http.StatusInternalServerError)
-		return
-	}
-
 	// 设置响应头
-	contentType := "video/mp4"
-	if strings.HasSuffix(filePath, ".wav") || strings.HasSuffix(filePath, ".WAV") {
+	contentType := "application/octet-stream"
+	switch strings.ToLower(filepath.Ext(filePath)) {
+	case ".mp4":
+		contentType = "video/mp4"
+	case ".wav":
 		contentType = "audio/wav"
+	case ".mp3":
+		contentType = "audio/mpeg"
+	case ".m4a":
+		contentType = "audio/mp4"
 	}
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
@@ -634,7 +425,7 @@ func downloadVideoHandler(w http.ResponseWriter, r *http.Request) {
 	// 复制文件到响应
 	http.ServeContent(w, r, filepath.Base(filePath), info.ModTime(), file)
 
-	fileLogger.Printf("视频下载成功: %s (%d bytes)", id, info.Size())
+	fileLogger.Printf("文件下载成功: %s (%d bytes)", id, info.Size())
 }
 
 // 日志中间件
@@ -676,44 +467,15 @@ func main() {
 		fileLogger.Fatalf("无法创建音频目录: %v", err)
 	}
 
-	// 初始化已删除文件管理器
-	deletedFilesManager = NewDeletedFilesManager(config.Storage.AudioDir)
-	fileLogger.Printf("已删除文件管理器已初始化")
-
-	// 初始化已读文件管理器
-	readFilesManager = NewReadFilesManager(config.Storage.AudioDir)
-	fileLogger.Printf("已读文件管理器已初始化")
-
-	// 初始化取消收藏文件管理器
-	uncollectedFilesManager = NewUncollectedFilesManager(config.Storage.AudioDir)
-	fileLogger.Printf("取消收藏文件管理器已初始化")
-
 	// 创建路由
 	r := mux.NewRouter()
 
 	// 注册路由
-	r.HandleFunc("/", healthHandler).Methods("GET")
-	r.HandleFunc("/upload", uploadHandler).Methods("POST")
-	r.HandleFunc("/api/check/{filename}", checkFileHandler).Methods("GET")
-	r.HandleFunc("/api/metadata/{filename}", getMetadataHandler).Methods("GET")
-	r.HandleFunc("/api/file/{filename}", deleteFileHandler).Methods("DELETE")
-	r.HandleFunc("/api/videos/{filename}", deleteFileHandler).Methods("DELETE")
-	r.HandleFunc("/api/videos/query", queryVideosHandler).Methods("POST")
-	r.HandleFunc("/api/videos/{id}/download", downloadVideoHandler).Methods("GET")
-
-	// 已删除文件管理接口
-	r.HandleFunc("/api/deleted/files", getDeletedFilesHandler).Methods("GET")
-	r.HandleFunc("/api/deleted/check", checkDeletedFilesHandler).Methods("POST")
-	r.HandleFunc("/api/deleted/cleanup", cleanupDeletedRecordsHandler).Methods("POST")
-
-	// 已读文件管理接口
-	r.HandleFunc("/api/read/mark", markReadHandler).Methods("POST")
-	r.HandleFunc("/api/read/files", getReadFilesHandler).Methods("GET")
-	r.HandleFunc("/api/read/remove", removeReadRecordHandler).Methods("DELETE")
-
-	// 取消收藏文件管理接口
-	r.HandleFunc("/api/uncollected/files", getUncollectedFilesHandler).Methods("GET")
-	r.HandleFunc("/api/uncollected/remove", removeUncollectedRecordHandler).Methods("DELETE")
+	r.HandleFunc("/health", healthHandler).Methods("GET")
+	r.HandleFunc("/api/files", uploadHandler).Methods("POST")
+	r.HandleFunc("/api/files/query", queryVideosHandler).Methods("POST")
+	r.HandleFunc("/api/files/{id}/download", downloadVideoHandler).Methods("GET")
+	r.HandleFunc("/api/files/{id}", deleteFileHandler).Methods("DELETE")
 
 	// 静态文件服务
 	r.PathPrefix("/audio/").Handler(http.StripPrefix("/audio/", http.FileServer(http.Dir(config.Storage.AudioDir))))
@@ -723,12 +485,11 @@ func main() {
 
 	// 启动服务器
 	addr := ":" + config.Server.Port
-	fileLogger.Println("🚀 音频文件服务器启动成功!")
-	fileLogger.Printf("📁 音频目录: %s", config.Storage.AudioDir)
+	fileLogger.Println("🚀 文件服务器启动成功!")
+	fileLogger.Printf("📁 文件目录: %s", config.Storage.AudioDir)
 	fileLogger.Printf("🌐 监听地址: 0.0.0.0:%s", config.Server.Port)
-	fileLogger.Printf("✅ 健康检查: http://localhost:%s/", config.Server.Port)
-	fileLogger.Printf("📤 上传接口: http://localhost:%s/upload", config.Server.Port)
-	fileLogger.Printf("🔍 文件检查: http://localhost:%s/api/check/{filename}", config.Server.Port)
+	fileLogger.Printf("✅ 健康检查: http://localhost:%s/health", config.Server.Port)
+	fileLogger.Printf("📤 上传接口: http://localhost:%s/api/files", config.Server.Port)
 
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		fileLogger.Fatalf("服务器启动失败: %v", err)

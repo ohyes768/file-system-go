@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# 音频文件服务器本地测试编译脚本（Windows版本）
+# 文件服务器本地测试编译脚本（Windows版本）
 # 用于在本地Windows环境编译和测试
 
 set -e  # 遇到错误立即退出
 
 echo "======================================"
-echo "  音频文件服务器本地编译 (Windows)"
+echo "  文件服务器本地编译 (Windows)"
 echo "======================================"
 echo ""
 
@@ -73,9 +73,9 @@ echo ""
 echo -e "${YELLOW}创建启动脚本...${NC}"
 cat > bin/start-server.sh << 'EOF'
 #!/bin/bash
-# 启动音频文件服务器
+# 启动文件服务器
 
-echo "启动音频文件服务器..."
+echo "启动文件服务器..."
 ./audio-server.exe
 EOF
 
@@ -94,8 +94,8 @@ echo -e "${YELLOW}本地测试步骤:${NC}"
 echo "1. 进入bin目录: cd bin"
 echo "2. 启动服务器: ./audio-server.exe"
 echo "3. 或使用启动脚本: ./start-server.sh"
-echo "4. 访问健康检查: curl http://localhost:8000/"
-echo "5. 测试上传: curl -X POST -F \"file=@test.wav\" http://localhost:8000/upload"
+echo "4. 访问健康检查: curl http://localhost:8000/health"
+echo "5. 测试上传: curl -X POST -F \"file=@test.wav\" http://localhost:8000/api/files"
 echo ""
 echo -e "${YELLOW}在新的终端窗口运行测试脚本:${NC}"
 echo "bash scripts/test-api.sh"

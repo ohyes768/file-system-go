@@ -2,130 +2,188 @@
 
 ## 概述
 
-file-system-go 为 douyin-collector 提供文件存储服务接口。本文档描述 API 规范。
+file-system-go 是一个**纯文件存储服务**，为上层应用（douyin-processor 等）提供文件存取能力。
+
+**职责边界**：
+- ✅ 管文件：上传、下载、删除、列表
+- ❌ 不管业务元数据：标题/作者/描述等元数据由上层应用维护
+- ❌ 不管用户状态：已读/已删/收藏等用户行为由上层应用维护
+
+**v2.0.0 重大变更**：剥离所有业务接口（v1.4/v1.5 已读/已删/取消收藏），重构为纯文件存储。详见 [README.md §接口对照表](../README.md#接口对照表)。
 
 ## 版本历史
 
 | 版本 | 日期 | 变更内容 |
 |------|------|----------|
-| 1.5.0 | 2026-03-07 | 添加已读文件记录和取消收藏文件记录功能 |
-| 1.4.0 | 2026-03-02 | 添加已删除文件记录功能，防止重复推送 |
+| 2.0.0 | 2026-06-08 | **重大重构**。剥离元数据/已读/已删/取消收藏业务接口；统一路由为 `/api/files`；删除走 hard delete；`/` 改为 `/health`；版本号 bump |
+| 1.5.0 | 2026-03-07 | 添加已读文件和取消收藏文件记录管理功能（**v2.0.0 已移除**） |
+| 1.4.0 | 2026-03-02 | 添加已删除文件记录功能（**v2.0.0 已移除**） |
 | 1.3.0 | 2026-02-28 | 添加视频列表查询和下载接口 |
-| 1.2.0 | 2026-02-27 | 添加视频元数据支持（标题、作者、描述） |
-| 1.1.0 | 2026-02-26 | 添加文件检查接口 |
+| 1.2.0 | 2026-02-27 | 添加视频元数据支持（**v2.0.0 已移除**） |
+| 1.1.0 | 2026-02-26 | 添加文件检查接口（**v2.0.0 已移除**） |
 | 1.0.0 | 2025-01-28 | 初始版本 |
 
 ---
 
-## 1. 文件检查接口（新增）
+## 接口总览
 
-### 1.1 检查文件是否存在
-
-**接口描述**：检查服务器上是否已存在指定文件
-
-**请求**
-
-```http
-GET /api/check/{filename}
-```
-
-**路径参数**
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| filename | string | 是 | 文件名（如：7123456789012345678.mp4） |
-
-**响应示例**
-
-文件存在：
-```json
-{
-  "exists": true,
-  "filename": "7123456789012345678.mp4",
-  "size": 102400000,
-  "upload_time": "2026-02-26T12:00:00Z"
-}
-```
-
-文件不存在：
-```json
-{
-  "exists": false,
-  "filename": "7123456789012345678.mp4"
-}
-```
-
-**响应字段说明**
-
-| 字段 | 类型 | 说明 |
+| 方法 | 路径 | 作用 |
 |------|------|------|
-| exists | boolean | 文件是否存在 |
-| filename | string | 文件名 |
-| size | number | 文件大小（字节），仅 exists=true 时返回 |
-| upload_time | string | 上传时间（ISO 8601），仅 exists=true 时返回 |
+| `GET` | `/health` | 健康检查 |
+| `POST` | `/api/files` | 上传文件 |
+| `GET` | `/api/files/{id}/download` | 下载文件（支持 HTTP Range） |
+| `DELETE` | `/api/files/{id}` | 删除文件（硬删除） |
+| `POST` | `/api/files/query` | 文件列表（支持 prefix/suffix 过滤） |
+| `GET` | `/audio/{filename}` | 静态文件直连（旁路） |
+
+> **文件 ID** = 上传时的客户端文件名（含扩展名），如 `video123.mp4`。
 
 ---
 
-## 2. 视频元数据接口（v1.2.0 新增）
+## 1. 健康检查
 
-### 2.1 获取视频元数据
-
-**接口描述**：获取指定视频的元数据信息
+**接口描述**：获取服务运行状态、版本号、存储目录。
 
 **请求**
 
 ```http
-GET /api/metadata/{filename}
+GET /health
 ```
 
-**路径参数**
+**成功响应** (200)
+
+```json
+{
+  "service": "File Server (Go)",
+  "status": "running",
+  "version": "2.0.0",
+  "audio_dir": "./audio_files"
+}
+```
+
+---
+
+## 2. 上传文件
+
+**接口描述**：上传一个文件到服务器。**仅接收文件，不接收业务元数据**。
+
+**请求**
+
+```http
+POST /api/files
+Content-Type: multipart/form-data
+```
+
+**表单参数**
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| filename | string | 是 | 文件名（如：video.mp4） |
+| file | File | 是 | 文件内容（任意类型，最大 `config.max_upload_mb`） |
 
-**成功响应**
+> ⚠️ v1.x 中的 `title` / `author` / `description` 字段已废弃，传入将被忽略。
+
+**成功响应** (200)
 
 ```json
 {
   "success": true,
-  "metadata": {
-    "filename": "video.mp4",
-    "title": "视频标题",
-    "author": "作者名称",
-    "description": "视频描述",
-    "upload_time": "2026-02-27T12:00:00+08:00"
-  }
+  "filename": "video123.mp4",
+  "url": "/api/files/video123.mp4/download",
+  "size": 12345
 }
 ```
 
 **失败响应**
 
-元数据不存在：
+| 状态码 | 含义 |
+|--------|------|
+| 400 Bad Request | 文件过大 / 表单解析失败 / 未找到文件字段 |
+| 500 Internal Server Error | 文件创建/写入失败 |
+
 ```json
 {
   "success": false,
-  "error": "Metadata not found"
+  "error": "错误描述"
 }
 ```
 
-### 2.2 删除视频及元数据
+**请求示例**
 
-**接口描述**：删除视频文件及其关联的元数据
+```bash
+curl -X POST \
+  -F "file=@video123.mp4" \
+  http://localhost:8000/api/files
+```
+
+---
+
+## 3. 下载文件
+
+**接口描述**：根据文件 ID 下载文件。**支持 HTTP Range 协议**，可断点续传。
 
 **请求**
 
 ```http
-DELETE /api/file/{filename}
+GET /api/files/{id}/download
 ```
 
 **路径参数**
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| filename | string | 是 | 文件名（如：video.mp4） |
+| id | string | 是 | 文件 ID（= 上传时的客户端文件名，含扩展名） |
 
-**成功响应**
+**成功响应** (200 / 206 Partial Content)
+
+文件二进制流，响应头：
+
+| 响应头 | 说明 |
+|--------|------|
+| `Content-Type` | 按扩展名推断：`video/mp4` / `audio/wav` / `audio/mpeg` / `audio/mp4` / `application/octet-stream` |
+| `Content-Length` | 文件大小 |
+| `Content-Disposition` | `attachment; filename="<filename>"` |
+| `Last-Modified` | 文件修改时间 |
+| `ETag` | 文件标识（由 `http.ServeContent` 生成） |
+| `Accept-Ranges` | `bytes`（表示支持 Range 请求） |
+
+**失败响应**
+
+| 状态码 | 含义 |
+|--------|------|
+| 400 Bad Request | 文件 ID 包含 `..` / `/` / `\` 等非法字符 |
+| 404 Not Found | 文件不存在 |
+
+**请求示例**
+
+```bash
+# 完整下载
+curl -O http://localhost:8000/api/files/video123.mp4/download
+
+# 断点续传
+curl -H "Range: bytes=0-1023" \
+  -o partial.bin \
+  http://localhost:8000/api/files/video123.mp4/download
+```
+
+---
+
+## 4. 删除文件（硬删除）
+
+**接口描述**：直接删除文件，**不保留软删除记录**（v1.4 的 `deleted_files.json` 已移除）。
+
+**请求**
+
+```http
+DELETE /api/files/{id}
+```
+
+**路径参数**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| id | string | 是 | 文件 ID（= 上传时的客户端文件名，含扩展名） |
+
+**成功响应** (200)
 
 ```json
 {
@@ -136,249 +194,11 @@ DELETE /api/file/{filename}
 
 **失败响应**
 
-文件不存在：
-```json
-{
-  "success": false,
-  "error": "File not found"
-}
-```
-
-### 2.3 元数据存储格式
-
-元数据以 JSON 伴生文件形式存储，文件名为 `{filename}.meta.json`：
-
-```
-audio_files/
-├── video1.mp4
-├── video1.mp4.meta.json
-├── video2.mp4
-└── video2.mp4.meta.json
-```
-
-**元数据文件内容示例**：
-
-```json
-{
-  "filename": "video1.mp4",
-  "title": "精彩视频合集",
-  "author": "创作者名称",
-  "description": "这是一个精彩视频的描述",
-  "upload_time": "2026-02-27T12:00:00+08:00"
-}
-```
-
----
-
-## 3. 视频查询和下载接口（v1.3.0 新增）
-
-### 3.1 查询视频列表
-
-**接口描述**：查询服务器上的视频文件列表，支持前缀和后缀过滤
-
-**请求**
-
-```http
-POST /api/videos/query
-Content-Type: application/json
-```
-
-**请求体**
-
-```json
-{
-  "filters": {
-    "prefix": "video",
-    "suffix": ".mp4"
-  }
-}
-```
-
-**请求字段说明**
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| filters | object | 否 | 过滤条件对象 |
-| filters.prefix | string | 否 | 文件名前缀过滤 |
-| filters.suffix | string | 否 | 文件名后缀过滤（如 .mp4） |
-
-**成功响应**
-
-```json
-{
-  "success": true,
-  "videos": [
-    {
-      "id": "video1",
-      "filename": "video1.mp4",
-      "size": 102400000,
-      "url": "/audio/video1.mp4"
-    },
-    {
-      "id": "video2",
-      "filename": "video2.mp4",
-      "size": 204800000,
-      "url": "/audio/video2.mp4"
-    }
-  ]
-}
-```
-
-**失败响应**
-
-```json
-{
-  "success": false,
-  "error": "Failed to read directory"
-}
-```
-
-**响应字段说明**
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| success | boolean | 查询是否成功 |
-| videos | array | 视频文件列表 |
-| videos[].id | string | 视频 ID（文件名去掉扩展名） |
-| videos[].filename | string | 完整文件名 |
-| videos[].size | number | 文件大小（字节） |
-| videos[].url | string | 文件访问 URL |
-| error | string | 错误描述，仅 success=false 时返回 |
-
-**请求示例（curl）**
-
-```bash
-# 查询所有视频
-curl -X POST http://localhost:8000/api/videos/query
-
-# 查询所有 .mp4 文件
-curl -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"filters":{"suffix": ".mp4"}}' \
-  http://localhost:8000/api/videos/query
-
-# 查询前缀为 "test" 的 .mp4 文件
-curl -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"filters":{"prefix": "test", "suffix": ".mp4"}}' \
-  http://localhost:8000/api/videos/query
-```
-
-### 3.2 下载视频
-
-**接口描述**：根据视频 ID 下载视频文件
-
-**请求**
-
-```http
-GET /api/videos/{id}/download
-```
-
-**路径参数**
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| id | string | 是 | 视频 ID（文件名去掉扩展名） |
-
-**支持的文件扩展名**
-
-- .mp4 / .MP4（视频文件）
-- .wav / .WAV（音频文件）
-
-**成功响应**
-
-返回文件二进制内容，响应头包含：
-
-| 响应头 | 说明 |
+| 状态码 | 含义 |
 |--------|------|
-| Content-Type | video/mp4 或 audio/wav |
-| Content-Length | 文件大小（字节） |
-| Content-Disposition | attachment; filename="{filename}" |
-
-**失败响应**
-
-- **400 Bad Request**: 无效的视频 ID（包含路径遍历字符）
-- **404 Not Found**: 视频文件不存在
-
-**请求示例（curl）**
-
-```bash
-# 下载视频
-curl -O http://localhost:8000/api/videos/video1/download
-
-# 下载并指定输出文件名
-curl http://localhost:8000/api/videos/video1/download --output my-video.mp4
-```
-
----
-
-## 4. 文件上传接口（更新）
-
-### 4.1 上传视频文件（支持元数据）
-
-```
-audio_files/
-├── video1.mp4
-├── video1.mp4.meta.json
-├── video2.mp4
-└── video2.mp4.meta.json
-```
-
-**元数据文件内容示例**：
-
-```json
-{
-  "filename": "video1.mp4",
-  "title": "精彩视频合集",
-  "author": "创作者名称",
-  "description": "这是一个精彩视频的描述",
-  "upload_time": "2026-02-27T12:00:00+08:00"
-}
-```
-
----
-
-## 3. 文件上传接口（更新）
-
-### 3.1 上传视频文件（支持元数据）
-
-**接口描述**：上传视频文件到服务器，支持传递标题、作者、描述等元数据
-
-**请求**
-
-```http
-POST /upload
-Content-Type: multipart/form-data
-```
-
-**表单参数**
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| file | File | 是 | 视频文件（MP4 格式） |
-| title | string | 否 | 视频标题 |
-| author | string | 否 | 作者名称 |
-| description | string | 否 | 视频描述 |
-
-**成功响应**
-
-```json
-{
-  "success": true,
-  "filename": "video.mp4",
-  "url": "/audio/video.mp4",
-  "size": 102400000,
-  "metadata": {
-    "filename": "video.mp4",
-    "title": "视频标题",
-    "author": "作者名称",
-    "description": "视频描述",
-    "upload_time": "2026-02-27T12:00:00+08:00"
-  }
-}
-```
-
-**失败响应**
+| 400 Bad Request | 文件 ID 包含非法字符 |
+| 404 Not Found | 文件不存在 |
+| 500 Internal Server Error | 删除失败（权限/IO 错误） |
 
 ```json
 {
@@ -387,194 +207,142 @@ Content-Type: multipart/form-data
 }
 ```
 
-**响应字段说明**
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| success | boolean | 上传是否成功 |
-| filename | string | 保存的文件名 |
-| url | string | 文件访问 URL |
-| size | number | 文件大小（字节） |
-| metadata | object | 元数据信息，v1.2.0 新增 |
-| error | string | 错误描述，仅 success=false 时返回 |
-
-**请求示例（curl）**
+**请求示例**
 
 ```bash
-curl -X POST \
-  -F "file=@video.mp4" \
-  -F "title=精彩视频" \
-  -F "author=创作者" \
-  -F "description=这是一个精彩视频" \
-  http://localhost:8000/upload
+curl -X DELETE http://localhost:8000/api/files/video123.mp4
 ```
 
 ---
 
-## 5. 文件检查接口（已有）
+## 5. 查询文件列表
 
----
+**接口描述**：列出存储目录中的文件，支持按前缀/后缀过滤。
 
-## 6. 接口列表
+**请求**
 
-### 6.1 所有接口
+```http
+POST /api/files/query
+Content-Type: application/json
+```
 
-| 接口 | 方法 | 状态 | 说明 |
+**请求体**
+
+```json
+{
+  "filters": {
+    "prefix": "douyin_",
+    "suffix": ".mp4"
+  }
+}
+```
+
+**请求字段**
+
+| 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| GET / | ✅ 已有 | 健康检查 |
-| POST /upload | ✅ 已有 | 文件上传（v1.2.0 支持元数据） |
-| GET /audio/{filename} | ✅ 已有 | 静态文件访问 |
-| GET /api/check/{filename} | ✅ 已有 | 文件检查 |
-| GET /api/metadata/{filename} | ✅ v1.2.0 | 获取视频元数据 |
-| DELETE /api/file/{filename} | ✅ v1.2.0 | 删除视频及元数据 |
-| POST /api/videos/query | ✅ v1.3.0 | 查询视频列表 |
-| GET /api/videos/{id}/download | ✅ v1.3.0 | 下载视频 |
+| filters | object | 否 | 过滤条件；省略则返回所有文件 |
+| filters.prefix | string | 否 | 文件名必须以此前缀开头 |
+| filters.suffix | string | 否 | 文件名必须以此后缀结尾（如 `.mp4`） |
 
-### 6.2 版本对比
+**成功响应** (200)
 
-| 功能 | v1.0.0 | v1.1.0 | v1.2.0 | v1.3.0 |
-|------|--------|--------|--------|--------|
-| 文件上传 | ✅ | ✅ | ✅ | ✅ |
-| 文件访问 | ✅ | ✅ | ✅ | ✅ |
-| 健康检查 | ✅ | ✅ | ✅ | ✅ |
-| 文件检查 | - | ✅ | ✅ | ✅ |
-| 元数据上传 | - | - | ✅ | ✅ |
-| 元数据查询 | - | - | ✅ | ✅ |
-| 文件删除 | - | - | ✅ | ✅ |
-| 视频列表查询 | - | - | - | ✅ |
-| 视频下载 | - | - | - | ✅ |
-
----
-
-## 7. Go 代码实现参考
-
-### 7.1 文件检查接口
-
-```go
-// 文件检查请求处理器
-func checkFileHandler(w http.ResponseWriter, r *http.Request) {
-    // 获取文件名
-    filename := mux.Vars(r)["filename"]
-
-    // 安全检查：防止路径遍历
-    if strings.Contains(filename, "..") {
-        http.Error(w, "Invalid filename", http.StatusBadRequest)
-        return
-    }
-
-    // 构建文件路径
-    filepath := path.Join(config.AudioDir, filename)
-
-    // 检查文件是否存在
-    info, err := os.Stat(filepath)
-    if os.IsNotExist(err) {
-        w.Header().Set("Content-Type", "application/json")
-        json.NewEncoder(w).Encode(map[string]interface{}{
-            "exists": false,
-            "filename": filename,
-        })
-        return
-    }
-
-    if err != nil {
-        http.Error(w, "File check failed", http.StatusInternalServerError)
-        return
-    }
-
-    // 返回文件信息
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(map[string]interface{}{
-        "exists": true,
-        "filename": filename,
-        "size": info.Size(),
-        "upload_time": info.ModTime().Format(time.RFC3339),
-    })
-}
-```
-
-### 7.2 路由注册
-
-```go
-func main() {
-    r := mux.NewRouter()
-
-    // 现有路由
-    r.HandleFunc("/", healthHandler).Methods("GET")
-    r.HandleFunc("/upload", uploadHandler).Methods("POST")
-    r.PathPrefix("/audio/").Handler(http.StripPrefix("/audio/", http.FileServer(http.Dir(audioDir))))
-
-    // 新增：文件检查接口
-    r.HandleFunc("/api/check/{filename}", checkFileHandler).Methods("GET")
-
-    // 启动服务器
-    http.ListenAndServe(":8000", r)
-}
-```
-
----
-
-## 8. 测试
-
-### 8.1 文件存在
-
-```bash
-curl http://localhost:8000/api/check/7123456789012345678.mp4
-```
-
-**预期响应**
-```json
-{
-  "exists": true,
-  "filename": "7123456789012345678.mp4",
-  "size": 102400000,
-  "upload_time": "2026-02-26T12:00:00Z"
-}
-```
-
-### 8.2 文件不存在
-
-```bash
-curl http://localhost:8000/api/check/nonexistent.mp4
-```
-
-**预期响应**
-```json
-{
-  "exists": false,
-  "filename": "nonexistent.mp4"
-}
-```
-
-### 8.3 查询视频列表
-
-```bash
-# 查询所有视频
-curl -X POST http://localhost:8000/api/videos/query
-```
-
-**预期响应**
 ```json
 {
   "success": true,
   "videos": [
     {
-      "id": "video1",
-      "filename": "video1.mp4",
+      "id": "douyin_video1",
+      "filename": "douyin_video1.mp4",
       "size": 102400000,
-      "url": "/audio/video1.mp4"
+      "url": "/audio/douyin_video1.mp4"
     }
   ]
 }
 ```
 
-### 8.4 下载视频
+**响应字段**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| success | boolean | 查询是否成功 |
+| videos | array | 文件列表 |
+| videos[].id | string | 文件 ID（完整文件名，含扩展名） |
+| videos[].filename | string | 完整文件名 |
+| videos[].size | number | 文件大小（字节） |
+| videos[].url | string | 静态直连 URL（走 `/audio/` 旁路） |
+
+**失败响应**
+
+| 状态码 | 含义 |
+|--------|------|
+| 400 Bad Request | 请求体 JSON 解析失败 |
+| 500 Internal Server Error | 读取目录失败 |
+
+**请求示例**
 
 ```bash
-# 下载视频
-curl -O http://localhost:8000/api/videos/video1/download
+# 列出所有文件
+curl -X POST http://localhost:8000/api/files/query
+
+# 仅 .mp4
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"filters":{"suffix": ".mp4"}}' \
+  http://localhost:8000/api/files/query
+
+# 前缀 + 后缀组合
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"filters":{"prefix": "douyin_", "suffix": ".mp4"}}' \
+  http://localhost:8000/api/files/query
 ```
 
-预期响应：文件下载到当前目录，文件名为 `video1`
+---
+
+## 6. 静态文件直连（旁路）
+
+**接口描述**：无需走 API，浏览器/客户端可直接通过静态路径访问文件。
+
+**请求**
+
+```http
+GET /audio/{filename}
+```
+
+由 Go 标准 `http.FileServer` 实现，自动支持：
+- 目录列表（如果指向目录）
+- Range 请求
+- Content-Type 自动识别
+- ETag / Last-Modified 缓存头
+
+**注意**：与第 3 节的 `/api/files/{id}/download` 行为基本一致，但不走应用层 handler。删除/更新文件时请注意浏览器缓存。
+
+---
+
+## 安全约定
+
+| 维度 | 实现 |
+|------|------|
+| 路径遍历防护 | 文件 ID 校验 `..` / `/` / `\` |
+| 文件大小限制 | `config.yaml` 中 `storage.max_upload_mb`（默认 100MB） |
+| 文件名冲突 | 上传同名文件**直接覆盖**（无 ID 生成，由调用方保证唯一性） |
+| 并发写 | 无锁，由 OS 文件系统保证原子性 |
+
+## 错误响应通用格式
+
+```json
+{
+  "success": false,
+  "error": "可读错误描述"
+}
+```
+
+| 状态码 | 含义 |
+|--------|------|
+| 400 | 客户端请求错误（参数非法、超限） |
+| 404 | 资源不存在 |
+| 500 | 服务端内部错误（IO、权限） |
 
 ---
 
@@ -582,264 +350,41 @@ curl -O http://localhost:8000/api/videos/video1/download
 
 ### A. 相关文档
 
+- [README.md](../README.md)
 - [技术规范文档](技术规范文档.md)
 - [ECS文件服务器部署指南](ECS文件服务器部署指南.md)
-- [douyin-collector API 规范](../douyin-collector/docs/API接口文档.md)
 
-### B. 变更记录
+### B. 客户端示例
 
-- 2026-02-26: 添加文件检查接口需求
+**Go**：
 
----
+```go
+// 上传
+resp, _ := http.Post("http://server:8000/api/files",
+    "multipart/form-data",
+    fileBody)
 
-## 9. 已删除文件管理接口（v1.4.0 新增）
-
-### 9.1 功能说明
-
-当用户在前端删除视频时，系统会自动将文件名记录到 `deleted_files.json`。douyin-collector 在上传前会检查该列表，避免重复推送已删除的文件。
-
-**存储位置**：`deleted_files.json` 存储在 audio_dir 的父目录
-
-### 9.2 查询已删除文件列表
-
-GET /api/deleted/files
-
-### 9.3 批量检查文件是否已删除
-
-POST /api/deleted/check
-
-请求体示例：
-```json
-{
-  "filenames": ["file1.wav", "file2.wav"]
-}
+// 下载
+resp, _ := http.Get("http://server:8000/api/files/video.mp4/download")
+io.Copy(dst, resp.Body)
 ```
 
-### 9.4 清理过期的删除记录
+**Python**：
 
-POST /api/deleted/cleanup?days=30
+```python
+import requests
 
----
+# 上传
+requests.post("http://server:8000/api/files",
+    files={"file": open("video.mp4", "rb")})
 
-## 10. 已读文件管理接口（v1.5.0 新增）
-
-### 10.1 功能说明
-
-记录用户标记为已读的文件，用于前端阅读状态管理。删除文件时会自动添加到已读记录中。
-
-**存储位置**：`read_files.json` 存储在 audio_dir 的父目录
-
-### 10.2 标记文件为已读
-
-**接口描述**：标记指定文件为已读
-
-**请求**
-
-```http
-POST /api/read/mark
-Content-Type: application/json
+# 下载
+requests.get("http://server:8000/api/files/video.mp4/download",
+    stream=True)
 ```
 
-**请求体**
+### C. 变更记录
 
-```json
-{
-  "filename": "xxx.wav"
-}
-```
-
-**请求字段说明**
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| filename | string | 是 | 文件名（如：xxx.wav） |
-
-**成功响应**
-
-```json
-{
-  "success": true,
-  "message": "已标记为已读"
-}
-```
-
-**失败响应**
-
-```json
-{
-  "success": false,
-  "error": "Filename is required"
-}
-```
-
-### 10.3 查询已读文件列表
-
-**接口描述**：查询已读文件列表，支持按文件名精确匹配
-
-**请求**
-
-```http
-GET /api/read/files?filename=xxx.wav
-```
-
-**查询参数**
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| filename | string | 否 | 文件名（精确匹配），不传则返回所有记录 |
-
-**成功响应**
-
-```json
-{
-  "success": true,
-  "records": [
-    {
-      "filename": "xxx.wav",
-      "read_at": "2026-03-07T12:00:00+08:00"
-    },
-    {
-      "filename": "yyy.mp4",
-      "read_at": "2026-03-07T13:00:00+08:00"
-    }
-  ]
-}
-```
-
-**响应字段说明**
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| success | boolean | 查询是否成功 |
-| records | array | 已读文件记录列表 |
-| records[].filename | string | 文件名 |
-| records[].read_at | string | 标记为已读的时间（RFC3339 格式） |
-
----
-
-## 11. 取消收藏文件管理接口（v1.5.0 新增）
-
-### 11.1 功能说明
-
-记录用户取消收藏的文件，用于前端收藏状态管理。删除文件时会自动添加到取消收藏记录中。
-
-**存储位置**：`uncollected_files.json` 存储在 audio_dir 的父目录
-
-### 11.2 获取取消收藏文件列表
-
-**接口描述**：获取所有取消收藏的文件列表
-
-**请求**
-
-```http
-GET /api/uncollected/files
-```
-
-**成功响应**
-
-```json
-{
-  "success": true,
-  "records": [
-    {
-      "filename": "xxx.wav",
-      "uncollected_at": "2026-03-07T12:00:00+08:00"
-    }
-  ]
-}
-```
-
-**响应字段说明**
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| success | boolean | 查询是否成功 |
-| records | array | 取消收藏文件记录列表 |
-| records[].filename | string | 文件名 |
-| records[].uncollected_at | string | 取消收藏的时间（RFC3339 格式） |
-
-### 11.3 删除取消收藏记录
-
-**接口描述**：删除指定文件的取消收藏记录
-
-**请求**
-
-```http
-DELETE /api/uncollected/remove
-Content-Type: application/json
-```
-
-**请求体**
-
-```json
-{
-  "filename": "xxx.wav"
-}
-```
-
-**请求字段说明**
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| filename | string | 是 | 文件名 |
-
-**成功响应**
-
-```json
-{
-  "success": true,
-  "message": "记录已移除"
-}
-```
-
-**失败响应**
-
-```json
-{
-  "success": false,
-  "error": "Record not found"
-}
-```
-
----
-
-## 12. 接口列表（更新）
-
-### 12.1 所有接口
-
-| 接口 | 方法 | 状态 | 说明 |
-|------|------|------|------|
-| GET / | ✅ 已有 | 健康检查 |
-| POST /upload | ✅ 已有 | 文件上传（v1.2.0 支持元数据） |
-| GET /audio/{filename} | ✅ 已有 | 静态文件访问 |
-| GET /api/check/{filename} | ✅ 已有 | 文件检查 |
-| GET /api/metadata/{filename} | ✅ v1.2.0 | 获取视频元数据 |
-| DELETE /api/file/{filename} | ✅ v1.2.0 | 删除视频及元数据 |
-| DELETE /api/videos/{filename} | ✅ v1.2.0 | 删除视频及元数据 |
-| POST /api/videos/query | ✅ v1.3.0 | 查询视频列表 |
-| GET /api/videos/{id}/download | ✅ v1.3.0 | 下载视频 |
-| GET /api/deleted/files | ✅ v1.4.0 | 查询已删除文件列表 |
-| POST /api/deleted/check | ✅ v1.4.0 | 批量检查文件是否已删除 |
-| POST /api/deleted/cleanup | ✅ v1.4.0 | 清理过期删除记录 |
-| POST /api/read/mark | ✅ v1.5.0 | 标记文件为已读 |
-| GET /api/read/files | ✅ v1.5.0 | 查询已读文件列表 |
-| GET /api/uncollected/files | ✅ v1.5.0 | 获取取消收藏文件列表 |
-| DELETE /api/uncollected/remove | ✅ v1.5.0 | 删除取消收藏记录 |
-
-### 12.2 版本对比
-
-| 功能 | v1.0.0 | v1.1.0 | v1.2.0 | v1.3.0 | v1.4.0 | v1.5.0 |
-|------|--------|--------|--------|--------|--------|--------|
-| 文件上传 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 文件访问 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 健康检查 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 文件检查 | - | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 元数据上传 | - | - | ✅ | ✅ | ✅ | ✅ |
-| 元数据查询 | - | - | ✅ | ✅ | ✅ | ✅ |
-| 文件删除 | - | - | ✅ | ✅ | ✅ | ✅ |
-| 视频列表查询 | - | - | - | ✅ | ✅ | ✅ |
-| 视频下载 | - | - | - | ✅ | ✅ | ✅ |
-| 已删除文件管理 | - | - | - | - | ✅ | ✅ |
-| 已读文件管理 | - | - | - | - | - | ✅ |
-| 取消收藏管理 | - | - | - | - | - | ✅ |
-
+| 日期 | 变更 |
+|------|------|
+| 2026-06-08 | v2.0.0 重大重构：剥离业务接口，路由重命名，硬删除 |

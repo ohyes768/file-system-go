@@ -1,17 +1,14 @@
 # Go 文件服务器
 
-基于 Go 语言开发的轻量级文件上传服务，用于在阿里云 ECS 服务器上托管音频/视频文件。
+基于 Go 语言开发的轻量级文件存储服务（v2.0），用于在阿里云 ECS 服务器上托管任意类型的文件。**纯文件存储，不管理业务元数据**——标题/作者/描述等元数据由上层应用（如 douyin-processor）维护。
 
 ## 功能特性
 
-- ✅ **文件上传**: 支持最大 100MB 的文件上传
-- ✅ **元数据支持**: 支持标题、作者、描述等元数据存储
-- ✅ **静态文件服务**: 提供已上传文件的 HTTP 访问
-- ✅ **文件检查**: 检查服务器上是否已存在指定文件
-- ✅ **文件删除**: 删除文件及其关联的元数据
-- ✅ **元数据查询**: 获取视频的元数据信息
-- ✅ **视频列表查询**: 支持前缀和后缀过滤的视频列表查询
-- ✅ **视频下载**: 根据视频 ID 下载视频文件
+- ✅ **文件上传**: 支持最大 100MB 的 multipart 文件上传
+- ✅ **文件下载**: 支持 HTTP Range，断点续传
+- ✅ **文件硬删除**: 直接删除文件，不留软删除记录
+- ✅ **文件列表查询**: 支持按前缀/后缀过滤
+- ✅ **静态文件服务**: 提供已上传文件的 HTTP 直连访问
 - ✅ **健康检查**: 服务状态监控接口
 - ✅ **双日志输出**: 控制台 + 文件日志
 - ✅ **配置文件**: YAML 格式配置管理
@@ -162,33 +159,32 @@ logging:
 
 ## API 接口
 
+> **基础路径**：`/api/files`，文件 ID = 上传时的客户端文件名（含扩展名）。
+> 本服务只做文件存取，**业务元数据（标题/作者/描述）由上层应用维护**。
+
 ### 1. 健康检查
 
 ```bash
-curl http://localhost:8000/
+curl http://localhost:8000/health
 ```
 
 响应:
 
 ```json
 {
-  "service": "Audio File Server (Go)",
+  "service": "File Server (Go)",
   "status": "running",
-  "version": "1.3.0",
-  "upload_endpoint": "/upload",
+  "version": "2.0.0",
   "audio_dir": "./audio_files"
 }
 ```
 
-### 2. 文件上传（支持元数据）
+### 2. 上传文件
 
 ```bash
 curl -X POST \
   -F "file=@video.mp4" \
-  -F "title=视频标题" \
-  -F "author=作者名称" \
-  -F "description=视频描述" \
-  http://localhost:8000/upload
+  http://localhost:8000/api/files
 ```
 
 响应:
@@ -197,72 +193,27 @@ curl -X POST \
 {
   "success": true,
   "filename": "video.mp4",
-  "url": "/audio/video.mp4",
-  "size": 12345,
-  "metadata": {
-    "filename": "video.mp4",
-    "title": "视频标题",
-    "author": "作者名称",
-    "description": "视频描述",
-    "upload_time": "2026-02-27T12:00:00+08:00"
-  }
+  "url": "/api/files/video.mp4/download",
+  "size": 12345
 }
 ```
 
-### 3. 文件访问
+### 3. 下载文件
 
 ```bash
-curl http://localhost:8000/audio/audio.wav --output downloaded.wav
+# 完整下载
+curl -O http://localhost:8000/api/files/video.mp4/download
+
+# 断点续传（HTTP Range）
+curl -H "Range: bytes=0-1023" \
+  -o partial.bin \
+  http://localhost:8000/api/files/video.mp4/download
 ```
 
-### 4. 文件检查
+### 4. 删除文件（硬删除）
 
 ```bash
-curl http://localhost:8000/api/check/video.mp4
-```
-
-文件存在时响应:
-```json
-{
-  "exists": true,
-  "filename": "video.mp4",
-  "size": 102400000,
-  "upload_time": "2026-02-26T12:00:00Z"
-}
-```
-
-文件不存在时响应:
-```json
-{
-  "exists": false,
-  "filename": "video.mp4"
-}
-```
-
-### 5. 获取视频元数据
-
-```bash
-curl http://localhost:8000/api/metadata/video.mp4
-```
-
-响应:
-```json
-{
-  "success": true,
-  "metadata": {
-    "filename": "video.mp4",
-    "title": "视频标题",
-    "author": "作者名称",
-    "description": "视频描述",
-    "upload_time": "2026-02-27T12:00:00+08:00"
-  }
-}
-```
-
-### 6. 删除视频及元数据
-
-```bash
-curl -X DELETE http://localhost:8000/api/file/video.mp4
+curl -X DELETE http://localhost:8000/api/files/video.mp4
 ```
 
 响应:
@@ -273,17 +224,29 @@ curl -X DELETE http://localhost:8000/api/file/video.mp4
 }
 ```
 
-### 7. 查询视频列表
+### 5. 查询文件列表
 
 ```bash
-# 查询所有视频
-curl -X POST http://localhost:8000/api/videos/query
+# 查询所有文件
+curl -X POST http://localhost:8000/api/files/query
 
-# 查询所有 .mp4 文件
+# 按后缀过滤（仅 .mp4）
 curl -X POST \
   -H "Content-Type: application/json" \
   -d '{"filters":{"suffix": ".mp4"}}' \
-  http://localhost:8000/api/videos/query
+  http://localhost:8000/api/files/query
+
+# 按前缀过滤
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"filters":{"prefix": "douyin_"}}' \
+  http://localhost:8000/api/files/query
+
+# 组合过滤
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"filters":{"prefix": "douyin_", "suffix": ".mp4"}}' \
+  http://localhost:8000/api/files/query
 ```
 
 响应:
@@ -292,23 +255,41 @@ curl -X POST \
   "success": true,
   "videos": [
     {
-      "id": "video1",
-      "filename": "video1.mp4",
+      "id": "douyin_video1",
+      "filename": "douyin_video1.mp4",
       "size": 102400000,
-      "url": "/audio/video1.mp4"
+      "url": "/audio/douyin_video1.mp4"
     }
   ]
 }
 ```
 
-### 8. 下载视频
+### 6. 静态文件直连（旁路）
+
+无需走 API，浏览器/客户端可直接通过静态路径访问：
 
 ```bash
-# 下载视频
-curl -O http://localhost:8000/api/videos/video1/download
+curl http://localhost:8000/audio/video.mp4 --output downloaded.mp4
 ```
 
-预期响应：文件下载到当前目录
+## 接口对照表
+
+| 方法 | 路径 | 作用 | v1 → v2 变更 |
+|---|---|---|---|
+| `GET` | `/health` | 健康检查 | `/` → `/health` |
+| `POST` | `/api/files` | 上传文件 | `/upload` → `/api/files`（移除 metadata 字段） |
+| `GET` | `/api/files/{id}/download` | 下载文件 | `/api/videos/{id}/download` 路径迁移 |
+| `DELETE` | `/api/files/{id}` | 删除文件 | `/api/file/{filename}` + `/api/videos/{filename}` → 统一 |
+| `POST` | `/api/files/query` | 文件列表 | `/api/videos/query` 路径迁移 |
+| `GET` | `/audio/{filename}` | 静态直连 | 保留 |
+
+**已移除接口**（v1.4 / v1.5 业务相关，已迁出至 douyin-processor）：
+
+- `GET /api/check/{filename}` — 文件检查
+- `GET /api/metadata/{filename}` — 元数据查询
+- `GET/POST/DELETE /api/deleted/*` — 已删除文件管理
+- `GET/POST/DELETE /api/read/*` — 已读文件管理
+- `GET/DELETE /api/uncollected/*` — 取消收藏管理
 
 ## 日志
 

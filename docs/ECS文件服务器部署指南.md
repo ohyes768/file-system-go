@@ -98,10 +98,10 @@ func init() {
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := HealthResponse{
-		Service:        "Audio File Server (Go)",
-		Status:         "running",
-		UploadEndpoint: "/upload",
-		AudioDir:       AUDIO_DIR,
+		Service:  "File Server (Go)",
+		Status:   "running",
+		Version:  "2.0.0",
+		AudioDir: AUDIO_DIR,
 	}
 	json.NewEncoder(w).Encode(response)
 }
@@ -163,7 +163,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 构建访问 URL
-	fileURL := fmt.Sprintf("/audio/%s", filename)
+	fileURL := fmt.Sprintf("/api/files/%s/download", filename)
 
 	// 返回成功响应
 	w.WriteHeader(http.StatusOK)
@@ -189,8 +189,11 @@ func main() {
 	r := mux.NewRouter()
 
 	// 注册路由
-	r.HandleFunc("/", healthHandler).Methods("GET")
-	r.HandleFunc("/upload", uploadHandler).Methods("POST")
+	r.HandleFunc("/health", healthHandler).Methods("GET")
+	r.HandleFunc("/api/files", uploadHandler).Methods("POST")
+	r.HandleFunc("/api/files/query", queryVideosHandler).Methods("POST")
+	r.HandleFunc("/api/files/{id}/download", downloadVideoHandler).Methods("GET")
+	r.HandleFunc("/api/files/{id}", deleteFileHandler).Methods("DELETE")
 
 	// 静态文件服务
 	r.PathPrefix("/audio/").Handler(http.StripPrefix("/audio/", http.FileServer(http.Dir(AUDIO_DIR))))
@@ -200,11 +203,11 @@ func main() {
 
 	// 启动服务器
 	addr := ":" + PORT
-	log.Printf("🚀 音频文件服务器启动成功!")
-	log.Printf("📁 音频目录: %s", AUDIO_DIR)
+	log.Printf("🚀 文件服务器启动成功!")
+	log.Printf("📁 文件目录: %s", AUDIO_DIR)
 	log.Printf("🌐 监听地址: 0.0.0.0:%s", PORT)
-	log.Printf("✅ 健康检查: http://localhost:%s/", PORT)
-	log.Printf("📤 上传接口: http://localhost:%s/upload", PORT)
+	log.Printf("✅ 健康检查: http://localhost:%s/health", PORT)
+	log.Printf("📤 上传接口: http://localhost:%s/api/files", PORT)
 
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatalf("服务器启动失败: %v", err)
@@ -285,11 +288,11 @@ chmod +x audio-server
 看到以下输出表示启动成功：
 
 ```
-2025/01/28 10:00:00 🚀 音频文件服务器启动成功!
-2025/01/28 10:00:00 📁 音频目录: /var/www/audio
-2025/01/28 10:00:00 🌐 监听地址: 0.0.0.0:8000
-2025/01/28 10:00:00 ✅ 健康检查: http://localhost:8000/
-2025/01/28 10:00:00 📤 上传接口: http://localhost:8000/upload
+2026/06/08 10:00:00 🚀 文件服务器启动成功!
+2026/06/08 10:00:00 📁 文件目录: /var/www/audio
+2026/06/08 10:00:00 🌐 监听地址: 0.0.0.0:8000
+2026/06/08 10:00:00 ✅ 健康检查: http://localhost:8000/health
+2026/06/08 10:00:00 📤 上传接口: http://localhost:8000/api/files
 ```
 
 **4. 测试健康检查：**
@@ -297,16 +300,16 @@ chmod +x audio-server
 打开新终端，测试服务是否正常：
 
 ```bash
-curl http://localhost:8000/
+curl http://localhost:8000/health
 ```
 
 应返回：
 
 ```json
 {
-  "service": "Audio File Server (Go)",
+  "service": "File Server (Go)",
   "status": "running",
-  "upload_endpoint": "/upload",
+  "version": "2.0.0",
   "audio_dir": "/var/www/audio"
 }
 ```
@@ -321,7 +324,7 @@ curl http://localhost:8000/
 # 创建 systemd 服务文件
 cat > /etc/systemd/system/audio-file-server.service << 'EOF'
 [Unit]
-Description=Audio File Server (Go)
+Description=File Server (Go)
 After=network.target
 
 [Service]
@@ -335,7 +338,7 @@ RestartSec=5s
 # 日志配置
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=audio-server
+SyslogIdentifier=file-server
 
 # 安全加固
 NoNewPrivileges=true
@@ -485,7 +488,11 @@ ufw allow 8000/tcp
 ecs:
   # 替换为你的 ECS 公网 IP
   host: "http://your-ecs-ip:8000"
-  upload_endpoint: "/upload"
+  upload_endpoint: "/api/files"      # v2.0.0 路径
+  download_endpoint: "/api/files/{id}/download"
+  delete_endpoint: "/api/files/{id}"
+  query_endpoint: "/api/files/query"
+  health_endpoint: "/health"         # v2.0.0: / → /health
   file_dir: "/var/www/audio"
 ```
 
@@ -495,16 +502,16 @@ ecs:
 
 ```bash
 # 本地测试
-curl http://your-ecs-ip:8000/
+curl http://your-ecs-ip:8000/health
 ```
 
 应返回：
 
 ```json
 {
-  "service": "Audio File Server (Go)",
+  "service": "File Server (Go)",
   "status": "running",
-  "upload_endpoint": "/upload",
+  "version": "2.0.0",
   "audio_dir": "/var/www/audio"
 }
 ```
@@ -515,7 +522,7 @@ curl http://your-ecs-ip:8000/
 # 在本地测试上传接口
 curl -X POST \
   -F "file=@test_audio.wav" \
-  http://your-ecs-ip:8000/upload
+  http://your-ecs-ip:8000/api/files
 ```
 
 应返回：
@@ -524,12 +531,43 @@ curl -X POST \
 {
   "success": true,
   "filename": "test_audio.wav",
-  "url": "/audio/test_audio.wav",
+  "url": "/api/files/test_audio.wav/download",
   "size": 12345
 }
 ```
 
-### 测试文件访问
+### 测试文件下载
+
+```bash
+# 完整下载
+curl -O http://your-ecs-ip:8000/api/files/test_audio.wav/download
+
+# 断点续传
+curl -H "Range: bytes=0-1023" \
+  -o partial.bin \
+  http://your-ecs-ip:8000/api/files/test_audio.wav/download
+```
+
+### 测试文件删除
+
+```bash
+curl -X DELETE http://your-ecs-ip:8000/api/files/test_audio.wav
+```
+
+### 测试文件列表
+
+```bash
+# 列出所有文件
+curl -X POST http://your-ecs-ip:8000/api/files/query
+
+# 仅 .mp4
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"filters":{"suffix": ".mp4"}}' \
+  http://your-ecs-ip:8000/api/files/query
+```
+
+### 测试文件访问（静态旁路）
 
 ```bash
 # 访问上传的文件
@@ -977,10 +1015,10 @@ ps aux | grep audio-server
 netstat -anp | grep 8000
 
 # 测试上传
-curl -X POST -F "file=@test.wav" http://localhost:8000/upload
+curl -X POST -F "file=@test.wav" http://localhost:8000/api/files
 
 # 测试健康检查
-curl http://localhost:8000/
+curl http://localhost:8000/health
 
 # 防火墙规则
 firewall-cmd --list-all

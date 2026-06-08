@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# 音频文件服务器API测试脚本
+# 文件服务器API测试脚本 (v2.0)
 
 set -e
 
 echo "======================================"
-echo "  音频文件服务器API测试"
+echo "  文件服务器API测试"
 echo "======================================"
 echo ""
 
@@ -22,7 +22,7 @@ TEST_DIR="../test"
 
 # 检查服务器是否运行
 echo -e "${YELLOW}1. 检查服务器状态...${NC}"
-if ! curl -s --connect-timeout 5 "$SERVER_URL/" > /dev/null 2>&1; then
+if ! curl -s --connect-timeout 5 "$SERVER_URL/health" > /dev/null 2>&1; then
     echo -e "${RED}错误: 无法连接到服务器 $SERVER_URL${NC}"
     echo "请确保服务器已启动 (运行: cd bin && ./audio-server.exe)"
     exit 1
@@ -34,10 +34,10 @@ echo ""
 echo -e "${BLUE}======================================"
 echo "测试 1: 健康检查接口"
 echo -e "======================================${NC}"
-echo "请求: GET $SERVER_URL/"
+echo "请求: GET $SERVER_URL/health"
 echo ""
 
-HEALTH_RESPONSE=$(curl -s "$SERVER_URL/")
+HEALTH_RESPONSE=$(curl -s "$SERVER_URL/health")
 echo "响应:"
 echo "$HEALTH_RESPONSE" | jq '.' 2>/dev/null || echo "$HEALTH_RESPONSE"
 echo ""
@@ -55,23 +55,23 @@ echo -e "${BLUE}======================================"
 echo "测试 2: 文件上传接口（创建测试文件）"
 echo -e "======================================${NC}"
 
-# 创建测试音频文件
+# 创建测试文件
 TEST_FILE="$TEST_DIR/test_audio.wav"
 mkdir -p "$TEST_DIR"
 
-echo "创建测试音频文件: $TEST_FILE"
+echo "创建测试文件: $TEST_FILE"
 # 创建一个简单的WAV文件头（44字节）+ 随机数据
 dd if=/dev/zero of="$TEST_FILE" bs=1024 count=10 2>/dev/null
 echo -e "${GREEN}✓ 测试文件创建成功 (10KB)${NC}"
 echo ""
 
-echo "请求: POST $SERVER_URL/upload"
+echo "请求: POST $SERVER_URL/api/files"
 echo "上传文件: $TEST_FILE"
 echo ""
 
 UPLOAD_RESPONSE=$(curl -s -X POST \
     -F "file=@$TEST_FILE" \
-    "$SERVER_URL/upload")
+    "$SERVER_URL/api/files")
 
 echo "响应:"
 echo "$UPLOAD_RESPONSE" | jq '.' 2>/dev/null || echo "$UPLOAD_RESPONSE"
@@ -90,18 +90,18 @@ else
 fi
 echo ""
 
-# 测试3: 文件访问接口
+# 测试3: 文件下载接口（API）
 if [ -n "$UPLOADED_FILENAME" ]; then
     echo -e "${BLUE}======================================"
-    echo "测试 3: 文件访问接口"
+    echo "测试 3: 文件下载接口（API）"
     echo -e "======================================${NC}"
-    echo "请求: GET $SERVER_URL/audio/$UPLOADED_FILENAME"
+    echo "请求: GET $SERVER_URL/api/files/$UPLOADED_FILENAME/download"
     echo ""
 
     DOWNLOADED_FILE="$TEST_DIR/downloaded.wav"
 
     # 下载文件
-    HTTP_CODE=$(curl -s -o "$DOWNLOADED_FILE" -w "%{http_code}" "$SERVER_URL/audio/$UPLOADED_FILENAME")
+    HTTP_CODE=$(curl -s -o "$DOWNLOADED_FILE" -w "%{http_code}" "$SERVER_URL/api/files/$UPLOADED_FILENAME/download")
 
     if [ "$HTTP_CODE" = "200" ]; then
         echo -e "${GREEN}✓ 文件下载成功 (HTTP $HTTP_CODE)${NC}"
@@ -122,16 +122,71 @@ if [ -n "$UPLOADED_FILENAME" ]; then
         echo -e "${RED}✗ 文件下载失败 (HTTP $HTTP_CODE)${NC}"
     fi
     echo ""
+
+    # 测试3.1: HTTP Range 断点续传
+    echo -e "${BLUE}--------------------------------------"
+    echo "测试 3.1: HTTP Range 断点续传"
+    echo -e "--------------------------------------${NC}"
+    echo "请求: GET $SERVER_URL/api/files/$UPLOADED_FILENAME/download (Range: bytes=0-1023)"
+    echo ""
+
+    RANGE_FILE="$TEST_DIR/partial.bin"
+    HTTP_CODE=$(curl -s -o "$RANGE_FILE" -w "%{http_code}" -H "Range: bytes=0-1023" "$SERVER_URL/api/files/$UPLOADED_FILENAME/download")
+    RANGE_SIZE=$(stat -f%z "$RANGE_FILE" 2>/dev/null || stat -c%s "$RANGE_FILE" 2>/dev/null)
+
+    if [ "$HTTP_CODE" = "206" ] && [ "$RANGE_SIZE" = "1024" ]; then
+        echo -e "${GREEN}✓ Range 请求成功 (HTTP 206, 收到 $RANGE_SIZE bytes)${NC}"
+    else
+        echo -e "${YELLOW}⚠ Range 测试结果: HTTP $HTTP_CODE, 收到 $RANGE_SIZE bytes (期望 206/1024)${NC}"
+    fi
+    rm -f "$RANGE_FILE"
+    echo ""
 fi
 
-# 测试4: 访问不存在的文件（404测试）
+# 测试4: 静态文件访问（旁路）
+if [ -n "$UPLOADED_FILENAME" ]; then
+    echo -e "${BLUE}======================================"
+    echo "测试 4: 静态文件访问（旁路 /audio/）"
+    echo -e "======================================${NC}"
+    echo "请求: GET $SERVER_URL/audio/$UPLOADED_FILENAME"
+    echo ""
+
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SERVER_URL/audio/$UPLOADED_FILENAME")
+    if [ "$HTTP_CODE" = "200" ]; then
+        echo -e "${GREEN}✓ 静态访问成功 (HTTP $HTTP_CODE)${NC}"
+    else
+        echo -e "${RED}✗ 静态访问失败 (HTTP $HTTP_CODE)${NC}"
+    fi
+    echo ""
+fi
+
+# 测试5: 文件列表查询
 echo -e "${BLUE}======================================"
-echo "测试 4: 访问不存在的文件（404测试）"
+echo "测试 5: 文件列表查询"
 echo -e "======================================${NC}"
-echo "请求: GET $SERVER_URL/audio/nonexistent.wav"
+echo "请求: POST $SERVER_URL/api/files/query"
 echo ""
 
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SERVER_URL/audio/nonexistent.wav")
+QUERY_RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" -d '{}' "$SERVER_URL/api/files/query")
+echo "响应:"
+echo "$QUERY_RESPONSE" | jq '.' 2>/dev/null || echo "$QUERY_RESPONSE"
+echo ""
+
+if echo "$QUERY_RESPONSE" | grep -q '"success":true'; then
+    echo -e "${GREEN}✓ 文件列表查询通过${NC}"
+else
+    echo -e "${RED}✗ 文件列表查询失败${NC}"
+fi
+echo ""
+
+# 测试6: 访问不存在的文件（404测试）
+echo -e "${BLUE}======================================"
+echo "测试 6: 访问不存在的文件（404测试）"
+echo -e "======================================${NC}"
+echo "请求: GET $SERVER_URL/api/files/nonexistent_file_xyz.wav/download"
+echo ""
+
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SERVER_URL/api/files/nonexistent_file_xyz.wav/download")
 
 if [ "$HTTP_CODE" = "404" ]; then
     echo -e "${GREEN}✓ 404错误处理正确 (HTTP $HTTP_CODE)${NC}"
@@ -140,9 +195,25 @@ else
 fi
 echo ""
 
-# 测试5: 测试大文件上传限制
+# 测试7: 路径遍历防护
 echo -e "${BLUE}======================================"
-echo "测试 5: 文件大小限制验证"
+echo "测试 7: 路径遍历防护"
+echo -e "======================================${NC}"
+echo "请求: GET $SERVER_URL/api/files/..%2F..%2Fetc%2Fpasswd/download"
+echo ""
+
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SERVER_URL/api/files/..%2F..%2Fetc%2Fpasswd/download")
+
+if [ "$HTTP_CODE" = "400" ]; then
+    echo -e "${GREEN}✓ 路径遍历防护正确 (HTTP 400)${NC}"
+else
+    echo -e "${YELLOW}⚠ HTTP状态码: $HTTP_CODE (期望400)${NC}"
+fi
+echo ""
+
+# 测试8: 文件大小限制验证
+echo -e "${BLUE}======================================"
+echo "测试 8: 文件大小限制验证"
 echo -e "======================================${NC}"
 echo "创建超大测试文件 (>100MB)..."
 echo ""
@@ -151,13 +222,13 @@ BIG_FILE="$TEST_DIR/big_test.wav"
 # 创建一个105MB的文件（超过100MB限制）
 dd if=/dev/zero of="$BIG_FILE" bs=1048576 count=105 2>/dev/null
 
-echo "请求: POST $SERVER_URL/upload"
+echo "请求: POST $SERVER_URL/api/files"
 echo "上传文件: $BIG_FILE (105MB)"
 echo ""
 
 UPLOAD_RESPONSE=$(curl -s -X POST \
     -F "file=@$BIG_FILE" \
-    "$SERVER_URL/upload" \
+    "$SERVER_URL/api/files" \
     --max-time 10 \
     2>&1 || echo "timeout")
 
@@ -175,6 +246,35 @@ fi
 rm -f "$BIG_FILE"
 echo ""
 
+# 测试9: 文件删除
+if [ -n "$UPLOADED_FILENAME" ]; then
+    echo -e "${BLUE}======================================"
+    echo "测试 9: 文件删除（硬删除）"
+    echo -e "======================================${NC}"
+    echo "请求: DELETE $SERVER_URL/api/files/$UPLOADED_FILENAME"
+    echo ""
+
+    DELETE_RESPONSE=$(curl -s -X DELETE "$SERVER_URL/api/files/$UPLOADED_FILENAME")
+    echo "响应:"
+    echo "$DELETE_RESPONSE" | jq '.' 2>/dev/null || echo "$DELETE_RESPONSE"
+    echo ""
+
+    if echo "$DELETE_RESPONSE" | grep -q '"success":true'; then
+        echo -e "${GREEN}✓ 文件删除测试通过${NC}"
+
+        # 验证文件已不存在
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SERVER_URL/api/files/$UPLOADED_FILENAME/download")
+        if [ "$HTTP_CODE" = "404" ]; then
+            echo -e "${GREEN}✓ 删除后访问返回 404 (HTTP $HTTP_CODE)${NC}"
+        else
+            echo -e "${YELLOW}⚠ 删除后访问返回 HTTP $HTTP_CODE (期望404)${NC}"
+        fi
+    else
+        echo -e "${RED}✗ 文件删除测试失败${NC}"
+    fi
+    echo ""
+fi
+
 # 测试总结
 echo -e "${GREEN}======================================"
 echo "  测试完成"
@@ -184,8 +284,8 @@ echo -e "${YELLOW}测试文件位置:${NC}"
 echo "  $TEST_FILE"
 echo ""
 echo -e "${YELLOW}日志文件位置:${NC}"
-echo "  logs/audio-server-$(date +%Y-%m-%d).log"
+echo "  logs/file-server-$(date +%Y-%m-%d).log"
 echo ""
 echo -e "${YELLOW}查看日志:${NC}"
-echo "  tail -f logs/audio-server-$(date +%Y-%m-%d).log"
+echo "  tail -f logs/file-server-$(date +%Y-%m-%d).log"
 echo ""
