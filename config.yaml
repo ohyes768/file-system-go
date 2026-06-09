@@ -1,4 +1,5 @@
-# 音频文件服务器配置文件
+# 文件服务器配置文件
+# 部署路径: /home/ohyes768/file-system-go
 
 server:
   # 服务器监听端口
@@ -9,7 +10,7 @@ server:
   write_timeout: 300
 
 storage:
-  # 音频文件存储目录
+  # 音频文件存储目录（建议使用绝对路径）
   audio_dir: "./audio_files"
   # 最大上传文件大小（MB）
   max_upload_mb: 100

@@ -1,0 +1,21 @@
+[Unit]
+Description=Audio File Server (Go)
+Documentation=https://github.com/your-repo/file-system-go
+After=network.target
+
+[Service]
+Type=simple
+User=ohyes768
+WorkingDirectory=/home/ohyes768/file-system-go
+ExecStart=/home/ohyes768/file-system-go/audio-server
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+# 安全限制
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
