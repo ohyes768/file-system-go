@@ -120,6 +120,28 @@ systemctl enable audio-file-server
 systemctl status audio-file-server
 ```
 
+#### 5. 配置 nginx 反向代理（对外 HTTPS）
+
+参考 `deploy/nginx.conf`，关键点：
+
+- **对外 HTTPS 端口：1443**（路由器 NAT：外网 1443 → NAS 1443）
+- 备用 HTTP 端口：8001（按需启用）
+- 反代上游：本地 `127.0.0.1:8000`
+- 证书路径：`/etc/nginx/ssl/server.crt`、`.key`
+
+部署：
+
+```bash
+sudo ln -s $(pwd)/deploy/nginx.conf /etc/nginx/sites-enabled/file-system-go
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+外网访问验证：
+
+```bash
+curl -k https://your-public-ip:1443/health
+```
+
 ## 项目结构
 
 ```
@@ -132,6 +154,9 @@ file-system-go/
 │   ├── build.sh         # Linux 编译脚本
 │   ├── build-test.sh    # Windows 本地编译脚本
 │   └── test-api.sh      # API 测试脚本
+├── deploy/              # 部署配置
+│   ├── deploy.sh        # 一键部署脚本
+│   └── nginx.conf       # NAS nginx 反代配置（对外 https:1443）
 ├── logs/                # 日志目录
 ├── docs/                # 文档目录
 ├── bin/                 # 编译输出目录
