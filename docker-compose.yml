@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  file-system-go:
+    image: alpine:latest
+    container_name: file-system-go
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - /home/ohyes768/file-system-go/audio_files:/app/audio_files:ro
+      - /home/ohyes768/file-system-go/logs:/app/logs
+      - /home/ohyes768/file-system-go/bin:/app/bin:ro
+    command: ["/app/bin/audio-server"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - cloudimgs_default
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+networks:
+  cloudimgs_default:
+    external: true
