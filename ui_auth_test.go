@@ -62,3 +62,25 @@ func TestUILoginPageHandler_ServesHTML(t *testing.T) {
 		t.Fatal("expected login page content")
 	}
 }
+
+func TestUIStaticHandler_ServesJSAndCSS(t *testing.T) {
+	for _, path := range []string{"/static/app.js", "/static/style.css"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rr := httptest.NewRecorder()
+		uiStaticHandler(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s: code=%d want 200", path, rr.Code)
+		}
+	}
+}
+
+func TestUIStaticHandler_BlocksHTML(t *testing.T) {
+	for _, path := range []string{"/static/index.html", "/static/login.html", "/static/evil.html"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rr := httptest.NewRecorder()
+		uiStaticHandler(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("%s: code=%d want 404", path, rr.Code)
+		}
+	}
+}

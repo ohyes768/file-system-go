@@ -139,6 +139,20 @@ func uiLoginPageHandler(w http.ResponseWriter, r *http.Request) {
 	serveWebFile(w, r, "login.html")
 }
 
+func uiStaticHandler(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/static/")
+	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "..") {
+		http.NotFound(w, r)
+		return
+	}
+	switch {
+	case strings.HasSuffix(name, ".js"), strings.HasSuffix(name, ".css"):
+		serveWebFile(w, r, name)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
 func requireUIAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/ui/logout" {

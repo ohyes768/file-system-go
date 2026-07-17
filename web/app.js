@@ -97,7 +97,9 @@
       actions += '<a href="' + escapeAttr(entry.url) + '" target="_blank" rel="noopener">下载</a>';
       actions += '<button type="button" class="btn-copy" data-url="' + escapeAttr(entry.url) + '">复制 URL</button>';
     }
-    actions += '<button type="button" class="btn-danger" data-name="' + escapeAttr(entry.name) + '" data-type="' + entry.type + '">删除</button>';
+    if (!currentPath) {
+      actions += '<button type="button" class="btn-danger" data-name="' + escapeAttr(entry.name) + '" data-type="' + entry.type + '">删除</button>';
+    }
     return '<tr><td>' + nameCell + '</td><td>' + typeCell + '</td><td>' + sizeCell + '</td><td class="actions">' + actions + '</td></tr>';
   }
 
@@ -128,6 +130,10 @@
   }
 
   async function deleteEntry(name, type) {
+    if (currentPath) {
+      alert('删除仅支持根目录');
+      return;
+    }
     if (!confirm('确定删除 "' + name + '"？')) return;
     const url = type === 'dir'
       ? '/api/files/dir/' + encodeURIComponent(name)

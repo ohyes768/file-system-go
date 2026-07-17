@@ -3,14 +3,11 @@ package main
 import (
 	"fmt"
 	"io"
-	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
-
-	"audio-server/web"
 
 	"github.com/gorilla/mux"
 )
@@ -89,8 +86,7 @@ func main() {
 
 	r.HandleFunc("/", uiIndexHandler).Methods("GET")
 	r.HandleFunc("/login.html", uiLoginPageHandler).Methods("GET")
-	staticFS, _ := fs.Sub(web.Files, ".")
-	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+	r.PathPrefix("/static/").Handler(http.HandlerFunc(uiStaticHandler))
 
 	handler := recoveryMiddleware(loggingMiddleware(r))
 
