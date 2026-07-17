@@ -12,25 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"gopkg.in/yaml.v3"
 )
-
-// 配置结构体
-type Config struct {
-	Server struct {
-		Port         string `yaml:"port"`
-		ReadTimeout  int    `yaml:"read_timeout"`
-		WriteTimeout int    `yaml:"write_timeout"`
-	} `yaml:"server"`
-	Storage struct {
-		AudioDir    string `yaml:"audio_dir"`
-		MaxUploadMB int    `yaml:"max_upload_mb"`
-	} `yaml:"storage"`
-	Logging struct {
-		Level  string `yaml:"level"`
-		LogDir string `yaml:"log_dir"`
-	} `yaml:"logging"`
-}
 
 // 响应结构体
 type Response struct {
@@ -87,38 +69,9 @@ type QueryResponse struct {
 }
 
 var (
-	config        Config
 	fileLogger    *log.Logger
 	consoleLogger = log.New(os.Stdout, "", log.LstdFlags)
 )
-
-// 加载配置文件
-func loadConfig() error {
-	data, err := os.ReadFile("config.yaml")
-	if err != nil {
-		consoleLogger.Printf("警告: 无法读取配置文件，使用默认配置: %v", err)
-		setDefaultConfig()
-		return nil
-	}
-
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return fmt.Errorf("配置文件解析失败: %v", err)
-	}
-
-	consoleLogger.Println("配置文件加载成功")
-	return nil
-}
-
-// 设置默认配置
-func setDefaultConfig() {
-	config.Server.Port = "8000"
-	config.Server.ReadTimeout = 300
-	config.Server.WriteTimeout = 300
-	config.Storage.AudioDir = "./audio_files"
-	config.Storage.MaxUploadMB = 100
-	config.Logging.Level = "INFO"
-	config.Logging.LogDir = "./logs"
-}
 
 // 初始化日志
 func initLogger() error {

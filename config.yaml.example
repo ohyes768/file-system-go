@@ -1,0 +1,13 @@
+server:
+  port: "8000"
+  read_timeout: 3600
+  write_timeout: 3600
+storage:
+  audio_dir: "./audio_files"
+  max_upload_mb: 1024
+ui:
+  password: "change-me"
+  session_days: 7
+logging:
+  level: "INFO"
+  log_dir: "./logs"
