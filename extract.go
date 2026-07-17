@@ -12,6 +12,7 @@ import (
 )
 
 func ArchiveBaseName(filename string) string {
+	filename = filepath.Base(filename)
 	lower := strings.ToLower(filename)
 	switch {
 	case strings.HasSuffix(lower, ".tar.gz"):
@@ -147,6 +148,12 @@ func extractTar(tr *tar.Reader, destDir string) error {
 				return err
 			}
 			out.Close()
+		default:
+			if hdr.Size > 0 {
+				if _, err := io.CopyN(io.Discard, tr, hdr.Size); err != nil {
+					return err
+				}
+			}
 		}
 	}
 }
