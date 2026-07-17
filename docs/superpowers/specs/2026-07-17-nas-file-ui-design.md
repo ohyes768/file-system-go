@@ -19,6 +19,26 @@
 | 实现形态 | Go 内嵌静态页（`embed`），保持单二进制 + 现有 Docker 部署 |
 | 原压缩包 | 解压后保留 |
 | 解压目录 | 以包名命名的子目录，如 `foo.zip` → `foo/` |
+| 接口兼容 | **不破坏现有对外 API**（见 §2.1） |
+
+### 2.1 接口兼容硬约束
+
+现有调用方（如 `douyin-processor`）依赖的接口必须保持可用，规则如下：
+
+| 接口 | 兼容要求 |
+|------|----------|
+| `GET /health` | 路径、方法、现有响应字段不变（可附加字段） |
+| `POST /api/files` | 仍为 `multipart` 字段名 `file`；成功响应至少含 `success` / `filename` / `url` / `size`；**默认不解压** |
+| `GET /api/files/{id}/download` | 行为不变（含 Range） |
+| `DELETE /api/files/{id}` | 对**文件**的硬删除行为不变；目录删除走新能力，不改变原「删文件」语义 |
+| `POST /api/files/query` | 请求体与响应结构不变 |
+| `GET /audio/{filename}` | 静态直连不变 |
+
+新增能力一律走**新路径**或**显式可选参数**，例如：
+
+- 自动解压：仅当请求带 `extract=true`（表单或 query）时执行；Web UI 上传时带上；旧客户端不传则与现在完全一致。
+- 子目录浏览 / 前缀列表增强：新增如 `GET /api/files/list`（或等价新路径），**不改** `POST /api/files/query`。
+- UI 登录：仅 `/api/ui/*` 与页面路由；**绝不**给 `/api/files*`、`/audio/*`、`/health` 加鉴权。
 
 ## 3. 架构
 
@@ -44,23 +64,22 @@ Agent（免密 curl/wget）──────► Go HTTP API ──► 本地磁
 
 ## 5. API
 
-### 5.1 保留
+### 5.1 现有接口（行为冻结，仅允许内部优化）
 
 - `GET /health`
+- `POST /api/files` — 内部可改为流式写入、提高默认 `max_upload_mb`；**响应必填字段与默认语义不变**；不解压 unless `extract=true`
 - `GET /api/files/{id}/download`（Range）
-- `DELETE /api/files/{id}`（扩展为可删文件或目录）
-- 静态文件前缀（现有 `/audio/`）
+- `DELETE /api/files/{id}` — 仅删除同名**文件**（与现网一致）
+- `POST /api/files/query` — 不变
+- `GET /audio/{filename}` — 不变
 
-### 5.2 调整
+### 5.2 新增接口（给 UI / 新能力）
 
-- `POST /api/files`：流式写入磁盘（`io.Copy`），默认 `max_upload_mb: 1024`；识别压缩包后自动解压；响应包含 `file_id`、`url`、`extracted_dir`（若有）。
-- 列表：提供 `GET /api/files?prefix=&path=`（支持子目录与前缀搜索）；可与现有 `POST /api/files/query` 并存或逐步迁移。
-
-### 5.3 新增（仅 UI）
-
-- `POST /api/ui/login` — body 含密码，成功后设置 HttpOnly Cookie
-- `POST /api/ui/logout` — 清除 Cookie
-- `GET /`、`GET /login` 等 — 内嵌静态资源；未登录访问管理页则跳转登录
+- `GET /api/files/list?prefix=&path=` — 子目录浏览 + 前缀搜索（UI 使用）
+- `DELETE /api/files/dir/{name}` — 删除解压目录（可选；避免改动原 DELETE 语义）
+- `POST /api/files` + `extract=true` — 上传成功后自动解压；响应**可附加** `extracted_dir`（旧字段仍保留）
+- `POST /api/ui/login` / `POST /api/ui/logout`
+- `GET /`、`GET /login` 等 — 内嵌静态页（`/` 在 v2 已让给 `/health`，可安全用作管理首页）
 
 ## 6. Web UI
 
@@ -106,6 +125,7 @@ logging:
 2. 可按前缀搜索，可一键复制下载 URL。
 3. NAS 上 agent 无需密码即可 `curl`/`wget` 下载压缩包或解压后的文件。
 4. 现有 Docker Compose + Nginx 部署路径可平滑升级（替换二进制/挂载静态资源即可）。
+5. **回归**：不带 `extract` 的 `POST /api/files`、`POST /api/files/query`、download、delete、`/audio/`、`/health` 与升级前行为一致（可用现有 `scripts/test-api.sh` 验证）。
 
 ## 10. 实现提示
 
