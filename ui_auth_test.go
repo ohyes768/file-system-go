@@ -38,3 +38,27 @@ func TestLoginHandler_SetsCookie(t *testing.T) {
 		t.Fatalf("missing cookie: %+v", cookies)
 	}
 }
+
+func TestUIIndexHandler_RedirectsWithoutCookie(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+	uiIndexHandler(rr, req)
+	if rr.Code != http.StatusFound {
+		t.Fatalf("code=%d want 302", rr.Code)
+	}
+	if loc := rr.Header().Get("Location"); loc != "/login.html" {
+		t.Fatalf("location=%q want /login.html", loc)
+	}
+}
+
+func TestUILoginPageHandler_ServesHTML(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/login.html", nil)
+	rr := httptest.NewRecorder()
+	uiLoginPageHandler(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code=%d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "文件管理") {
+		t.Fatal("expected login page content")
+	}
+}

@@ -3,11 +3,14 @@ package main
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
+
+	"audio-server/web"
 
 	"github.com/gorilla/mux"
 )
@@ -73,14 +76,21 @@ func main() {
 	r := mux.NewRouter()
 
 	r.HandleFunc("/health", healthHandler).Methods("GET")
-	r.HandleFunc("/api/files", uploadHandler).Methods("POST")
-	r.HandleFunc("/api/files/query", queryVideosHandler).Methods("POST")
+	r.HandleFunc("/api/ui/login", uiLoginHandler).Methods("POST")
+	r.HandleFunc("/api/ui/logout", uiLogoutHandler).Methods("POST")
 	r.HandleFunc("/api/files/list", listFilesHandler).Methods("GET")
 	r.HandleFunc("/api/files/dir/{name}", deleteDirHandler).Methods("DELETE")
+	r.HandleFunc("/api/files", uploadHandler).Methods("POST")
+	r.HandleFunc("/api/files/query", queryVideosHandler).Methods("POST")
 	r.HandleFunc("/api/files/{id}/download", downloadVideoHandler).Methods("GET")
 	r.HandleFunc("/api/files/{id}", deleteFileHandler).Methods("DELETE")
 
 	r.PathPrefix("/audio/").Handler(http.StripPrefix("/audio/", http.FileServer(http.Dir(config.Storage.AudioDir))))
+
+	r.HandleFunc("/", uiIndexHandler).Methods("GET")
+	r.HandleFunc("/login.html", uiLoginPageHandler).Methods("GET")
+	staticFS, _ := fs.Sub(web.Files, ".")
+	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
 	handler := recoveryMiddleware(loggingMiddleware(r))
 
@@ -91,7 +101,13 @@ func main() {
 	fileLogger.Printf("✅ 健康检查: http://localhost:%s/health", config.Server.Port)
 	fileLogger.Printf("📤 上传接口: http://localhost:%s/api/files", config.Server.Port)
 
-	if err := http.ListenAndServe(addr, handler); err != nil {
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      handler,
+		ReadTimeout:  time.Duration(config.Server.ReadTimeout) * time.Second,
+		WriteTimeout: time.Duration(config.Server.WriteTimeout) * time.Second,
+	}
+	if err := srv.ListenAndServe(); err != nil {
 		fileLogger.Fatalf("服务器启动失败: %v", err)
 	}
 }

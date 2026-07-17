@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"audio-server/web"
 )
 
 const uiSessionCookie = "ui_session"
@@ -106,6 +108,35 @@ func uiLogoutHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	clearUISessionCookie(w)
 	json.NewEncoder(w).Encode(Response{Success: true})
+}
+
+func serveWebFile(w http.ResponseWriter, r *http.Request, name string) {
+	data, err := web.Files.ReadFile(name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	switch {
+	case strings.HasSuffix(name, ".html"):
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	case strings.HasSuffix(name, ".js"):
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	case strings.HasSuffix(name, ".css"):
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	}
+	w.Write(data)
+}
+
+func uiIndexHandler(w http.ResponseWriter, r *http.Request) {
+	if _, ok := uiSessionFromRequest(r); !ok {
+		http.Redirect(w, r, "/login.html", http.StatusFound)
+		return
+	}
+	serveWebFile(w, r, "index.html")
+}
+
+func uiLoginPageHandler(w http.ResponseWriter, r *http.Request) {
+	serveWebFile(w, r, "login.html")
 }
 
 func requireUIAuth(next http.Handler) http.Handler {

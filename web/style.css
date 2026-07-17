@@ -1,0 +1,301 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #f4f6f8;
+  color: #1a1a2e;
+  line-height: 1.5;
+}
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.login-card {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  padding: 2rem;
+  width: 100%;
+  max-width: 360px;
+}
+
+.login-card h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.5rem;
+}
+
+.subtitle {
+  margin: 0 0 1.5rem;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+input[type="password"],
+input[type="search"] {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+input[type="password"]:focus,
+input[type="search"]:focus {
+  outline: none;
+  border-color: #3b6fd9;
+  box-shadow: 0 0 0 2px rgba(59, 111, 217, 0.2);
+}
+
+button {
+  cursor: pointer;
+  font-size: 0.875rem;
+  border: none;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+#login-btn {
+  width: 100%;
+  margin-top: 1rem;
+  padding: 0.65rem;
+  background: #3b6fd9;
+  color: #fff;
+  font-size: 1rem;
+}
+
+#login-btn:hover:not(:disabled) {
+  background: #2f5bb5;
+}
+
+.error {
+  color: #c0392b;
+  font-size: 0.875rem;
+  margin-top: 0.75rem;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+  padding: 0.75rem 1.5rem;
+}
+
+.top-bar h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+section {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+section h2 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+}
+
+.drop-zone {
+  border: 2px dashed #bbb;
+  border-radius: 6px;
+  padding: 2rem;
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.drop-zone.dragover {
+  border-color: #3b6fd9;
+  background: #eef3fc;
+}
+
+.file-label {
+  color: #3b6fd9;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: #888;
+}
+
+.progress-wrap {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 8px;
+  background: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar::after {
+  content: "";
+  display: block;
+  height: 100%;
+  width: var(--pct, 0%);
+  background: #3b6fd9;
+  transition: width 0.1s;
+}
+
+.status-msg {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  min-height: 1.25rem;
+}
+
+.status-msg.ok { color: #27ae60; }
+.status-msg.err { color: #c0392b; }
+
+.list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.breadcrumb a {
+  color: #3b6fd9;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.breadcrumb a:hover {
+  text-decoration: underline;
+}
+
+.breadcrumb .sep {
+  color: #999;
+  margin: 0 0.25rem;
+}
+
+.search-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btn-secondary {
+  background: #eee;
+  color: #333;
+}
+
+.btn-secondary:hover {
+  background: #ddd;
+}
+
+.file-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.file-table th,
+.file-table td {
+  padding: 0.6rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+.file-table th {
+  font-weight: 600;
+  color: #555;
+}
+
+.file-table .empty {
+  text-align: center;
+  color: #888;
+  padding: 2rem;
+}
+
+.dir-link {
+  color: #3b6fd9;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.dir-link:hover {
+  text-decoration: underline;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.actions button,
+.actions a {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.5rem;
+}
+
+.actions a {
+  background: #eee;
+  color: #333;
+  text-decoration: none;
+  border-radius: 4px;
+}
+
+.actions a:hover {
+  background: #ddd;
+}
+
+.btn-danger {
+  background: #fdecea;
+  color: #c0392b;
+}
+
+.btn-danger:hover {
+  background: #f5c6c0;
+}
+
+.btn-copy {
+  background: #e8f4fd;
+  color: #2980b9;
+}
+
+.btn-copy:hover {
+  background: #cce5f7;
+}
