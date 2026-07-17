@@ -81,6 +81,13 @@ echo ""
 if echo "$UPLOAD_RESPONSE" | grep -q '"success":true'; then
     echo -e "${GREEN}✓ 文件上传测试通过${NC}"
 
+    # v2.0 兼容：普通上传不应要求或返回 extracted_dir
+    if echo "$UPLOAD_RESPONSE" | grep -q '"extracted_dir"'; then
+        echo -e "${RED}✗ 普通上传不应返回 extracted_dir${NC}"
+    else
+        echo -e "${GREEN}✓ 普通上传未返回 extracted_dir（v2.0 兼容）${NC}"
+    fi
+
     # 提取文件名用于后续测试
     UPLOADED_FILENAME=$(echo "$UPLOAD_RESPONSE" | jq -r '.filename' 2>/dev/null || echo "")
     echo "上传的文件名: $UPLOADED_FILENAME"
@@ -176,6 +183,87 @@ if echo "$QUERY_RESPONSE" | grep -q '"success":true'; then
     echo -e "${GREEN}✓ 文件列表查询通过${NC}"
 else
     echo -e "${RED}✗ 文件列表查询失败${NC}"
+fi
+echo ""
+
+# 测试5.1: 目录浏览列表 (GET /api/files/list)
+echo -e "${BLUE}======================================"
+echo "测试 5.1: 目录浏览列表 (GET /api/files/list)"
+echo -e "======================================${NC}"
+echo "请求: GET $SERVER_URL/api/files/list"
+echo ""
+
+LIST_RESPONSE=$(curl -s "$SERVER_URL/api/files/list")
+echo "响应:"
+echo "$LIST_RESPONSE" | jq '.' 2>/dev/null || echo "$LIST_RESPONSE"
+echo ""
+
+if echo "$LIST_RESPONSE" | grep -q '"success":true' && echo "$LIST_RESPONSE" | grep -q '"entries"'; then
+    echo -e "${GREEN}✓ 目录浏览列表测试通过${NC}"
+else
+    echo -e "${RED}✗ 目录浏览列表测试失败${NC}"
+fi
+echo ""
+
+# 测试5.2: 上传压缩包并解压 (extract=true)
+echo -e "${BLUE}======================================"
+echo "测试 5.2: 上传压缩包并解压 (extract=true)"
+echo -e "======================================${NC}"
+
+EXTRACT_ZIP="$TEST_DIR/test_pkg.zip"
+EXTRACTED_DIR="test_pkg"
+
+create_test_zip() {
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c "import zipfile; z=zipfile.ZipFile('$EXTRACT_ZIP','w'); z.writestr('sample.txt','extract test'); z.close()"
+    elif command -v python >/dev/null 2>&1; then
+        python -c "import zipfile; z=zipfile.ZipFile('$EXTRACT_ZIP','w'); z.writestr('sample.txt','extract test'); z.close()"
+    else
+        echo -e "${YELLOW}⚠ 跳过解压测试：未找到 python/python3 无法创建 zip${NC}"
+        return 1
+    fi
+    return 0
+}
+
+if create_test_zip; then
+    echo "请求: POST $SERVER_URL/api/files?extract=true"
+    echo "上传文件: $EXTRACT_ZIP"
+    echo ""
+
+    EXTRACT_RESPONSE=$(curl -s -X POST \
+        -F "file=@$EXTRACT_ZIP" \
+        -F "extract=true" \
+        "$SERVER_URL/api/files?extract=true")
+
+    echo "响应:"
+    echo "$EXTRACT_RESPONSE" | jq '.' 2>/dev/null || echo "$EXTRACT_RESPONSE"
+    echo ""
+
+    if echo "$EXTRACT_RESPONSE" | grep -q '"success":true' && echo "$EXTRACT_RESPONSE" | grep -q '"extracted_dir"'; then
+        echo -e "${GREEN}✓ 解压上传测试通过（含 extracted_dir）${NC}"
+
+        # 验证解压目录可列出
+        EXTRACT_LIST=$(curl -s "$SERVER_URL/api/files/list?path=$EXTRACTED_DIR")
+        if echo "$EXTRACT_LIST" | grep -q 'sample.txt'; then
+            echo -e "${GREEN}✓ 解压目录内容可浏览${NC}"
+        else
+            echo -e "${YELLOW}⚠ 解压目录列表未找到 sample.txt${NC}"
+        fi
+
+        # 清理：删除解压目录
+        DELETE_DIR_RESPONSE=$(curl -s -X DELETE "$SERVER_URL/api/files/dir/$EXTRACTED_DIR")
+        if echo "$DELETE_DIR_RESPONSE" | grep -q '"success":true'; then
+            echo -e "${GREEN}✓ 解压目录删除成功${NC}"
+        else
+            echo -e "${YELLOW}⚠ 解压目录删除失败: $DELETE_DIR_RESPONSE${NC}"
+        fi
+
+        # 清理：删除上传的 zip 文件
+        curl -s -X DELETE "$SERVER_URL/api/files/test_pkg.zip" > /dev/null
+    else
+        echo -e "${RED}✗ 解压上传测试失败${NC}"
+    fi
+    rm -f "$EXTRACT_ZIP"
 fi
 echo ""
 

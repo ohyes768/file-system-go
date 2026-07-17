@@ -11,7 +11,9 @@
 - ✅ **静态文件服务**: 提供已上传文件的 HTTP 直连访问
 - ✅ **健康检查**: 服务状态监控接口
 - ✅ **双日志输出**: 控制台 + 文件日志
-- ✅ **配置文件**: YAML 格式配置管理
+- ✅ **Web 文件管理 UI**: 密码登录后浏览器内上传/浏览/删除（`/`）
+- ✅ **上传可选解压**: `extract=true` 时自动解压 `.zip`/`.tar`/`.tar.gz`（不传则与 v2.0.0 相同）
+- ✅ **配置文件**: YAML 格式配置管理（参考 `config.yaml.example`）
 - ✅ **单文件部署**: 编译后只需一个可执行文件
 - ✅ **跨平台**: 支持 Windows/Linux 交叉编译
 
@@ -32,7 +34,16 @@ bash scripts/build-test.sh
 
 编译成功后会在 `bin/` 目录生成 `audio-server.exe`
 
-#### 2. 启动服务器
+#### 2. 配置（可选）
+
+复制示例配置并按需修改 UI 密码与存储路径：
+
+```bash
+cp config.yaml.example config.yaml
+# 编辑 ui.password、storage.audio_dir 等
+```
+
+#### 3. 启动服务器
 
 ```bash
 cd bin
@@ -46,7 +57,7 @@ cd bin
 ./start-server.sh
 ```
 
-#### 3. 运行测试
+#### 4. 运行测试
 
 在新的终端窗口运行:
 
@@ -165,7 +176,7 @@ file-system-go/
 
 ## 配置说明
 
-`config.yaml` 配置文件:
+完整示例见 [`config.yaml.example`](config.yaml.example)。本地 `config.yaml` 常用字段：
 
 ```yaml
 server:
@@ -174,8 +185,12 @@ server:
   write_timeout: 300        # 写入超时（秒）
 
 storage:
-  audio_dir: "./audio_files"  # 音频文件存储目录
+  audio_dir: "./audio_files"  # 文件存储目录
   max_upload_mb: 100          # 最大上传文件大小（MB）
+
+ui:
+  password: "change-me"       # Web UI 登录密码
+  session_days: 7             # 登录 Cookie 有效期（天）
 
 logging:
   level: "INFO"              # 日志级别
@@ -212,7 +227,16 @@ curl -X POST \
   http://localhost:8000/api/files
 ```
 
-响应:
+上传压缩包并解压（可选，`extract=true`）：
+
+```bash
+curl -X POST \
+  -F "file=@pkg.zip" \
+  -F "extract=true" \
+  "http://localhost:8000/api/files?extract=true"
+```
+
+响应（解压成功时含 `extracted_dir`）:
 
 ```json
 {
@@ -223,7 +247,18 @@ curl -X POST \
 }
 ```
 
-### 3. 下载文件
+### 3. Web UI 登录
+
+浏览器访问 `http://localhost:8000/`，使用 `config.yaml` 中 `ui.password` 登录；API：
+
+```bash
+curl -c cookies.txt -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"password":"change-me"}' \
+  http://localhost:8000/api/ui/login
+```
+
+### 4. 下载文件
 
 ```bash
 # 完整下载
@@ -235,7 +270,7 @@ curl -H "Range: bytes=0-1023" \
   http://localhost:8000/api/files/video.mp4/download
 ```
 
-### 4. 删除文件（硬删除）
+### 5. 删除文件（硬删除）
 
 ```bash
 curl -X DELETE http://localhost:8000/api/files/video.mp4
@@ -249,7 +284,7 @@ curl -X DELETE http://localhost:8000/api/files/video.mp4
 }
 ```
 
-### 5. 查询文件列表
+### 6. 查询文件列表
 
 ```bash
 # 查询所有文件
@@ -289,7 +324,13 @@ curl -X POST \
 }
 ```
 
-### 6. 静态文件直连（旁路）
+### 7. 目录浏览（UI）
+
+```bash
+curl "http://localhost:8000/api/files/list?path=&prefix="
+```
+
+### 8. 静态文件直连（旁路）
 
 无需走 API，浏览器/客户端可直接通过静态路径访问：
 
@@ -306,6 +347,10 @@ curl http://localhost:8000/audio/video.mp4 --output downloaded.mp4
 | `GET` | `/api/files/{id}/download` | 下载文件 | `/api/videos/{id}/download` 路径迁移 |
 | `DELETE` | `/api/files/{id}` | 删除文件 | `/api/file/{filename}` + `/api/videos/{filename}` → 统一 |
 | `POST` | `/api/files/query` | 文件列表 | `/api/videos/query` 路径迁移 |
+| `GET` | `/api/files/list` | 目录浏览 | **v2.1 新增** |
+| `DELETE` | `/api/files/dir/{name}` | 删除子目录 | **v2.1 新增** |
+| `POST` | `/api/ui/login` | Web UI 登录 | **v2.1 新增** |
+| `POST` | `/api/ui/logout` | Web UI 登出 | **v2.1 新增** |
 | `GET` | `/audio/{filename}` | 静态直连 | 保留 |
 
 **已移除接口**（v1.4 / v1.5 业务相关，已迁出至 douyin-processor）：
