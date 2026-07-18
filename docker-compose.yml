@@ -7,9 +7,10 @@ services:
     restart: unless-stopped
     working_dir: /app
     volumes:
-      - /home/ohyes768/file-system-go/audio_files:/app/audio_files:ro
+      - /home/ohyes768/file-system-go/audio_files:/app/audio_files
       - /home/ohyes768/file-system-go/logs:/app/logs
       - /home/ohyes768/file-system-go/bin:/app/bin:ro
+      - /home/ohyes768/file-system-go/config.yaml:/app/config.yaml:ro
     command: ["/app/bin/audio-server"]
     ports:
       - "127.0.0.1:8000:8000"
